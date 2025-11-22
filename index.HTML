@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cloud Budget Tracker</title>
+    
+    <!-- iOS Web App Meta -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Cloud Budget">
+
+    <!-- Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- FIREBASE LIBRARIES (NON-MODULE IMPORTS FOR HOSTING COMPATIBILITY) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; }
+        input, select, button { font-size: 16px !important; } /* Prevent iOS zoom */
+        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }
+        .loader { border-top-color: #3498db; -webkit-animation: spinner 1.5s linear infinite; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Hide scrollbar for clean UI */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="min-h-screen text-gray-800 pb-20">
+
+    <!-- APP SETUP / LOGIN SCREEN -->
+    <div id="auth-container" class="min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md space-y-6">
+            <div class="text-center">
+                <h1 class="text-3xl font-extrabold text-indigo-600">Cloud Budget</h1>
+                <p class="text-gray-500 text-sm mt-2">Secure, Multi-Device Tracking</p>
+            </div>
+
+            <!-- Auth Form -->
+            <div id="login-form" class="space-y-4">
+                <input type="email" id="email" placeholder="Email" class="w-full p-3 border border-gray-300 rounded-lg" />
+                <input type="password" id="password" placeholder="Password" class="w-full p-3 border border-gray-300 rounded-lg" />
+                <div class="flex gap-2">
+                    <button onclick="handleLogin()" class="flex-1 py-3 bg-indigo-600 text-white rounded-lg font-bold shadow hover:bg-indigo-700">Log In</button>
+                    <button onclick="handleRegister()" class="flex-1 py-3 bg-white text-indigo-600 border border-indigo-600 rounded-lg font-bold shadow hover:bg-indigo-50">Sign Up</button>
+                </div>
+                <p id="auth-error" class="text-red-500 text-center text-sm hidden"></p>
+            </div>
+            
+            <div id="loading-state" class="hidden text-center">
+                <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4 mx-auto"></div>
+                <p class="text-gray-500">Connecting to Cloud...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN DASHBOARD (Hidden until Auth) -->
+    <div id="dashboard-container" class="hidden">
+        <!-- Header -->
+        <header class="bg-indigo-700 text-white p-4 shadow-lg sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto flex justify-between items-center">
+                <div>
+                    <h1 class="text-xl font-bold">My Budget</h1>
+                    <p id="user-email-display" class="text-xs text-indigo-200">Syncing...</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="exportPortableReport()" class="text-xs bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded text-white border border-indigo-400">Report</button>
+                    <button onclick="handleLogout()" class="text-xs bg-indigo-800 hover:bg-indigo-900 px-3 py-1 rounded text-indigo-100 border border-indigo-600">Logout</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="max-w-7xl mx-auto p-4 space-y-6">
+            
+            <!-- Month Filter -->
+            <div class="flex justify-end">
+                <select id="month-selector" onchange="updateDashboard()" class="bg-white border border-gray-300 text-gray-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 shadow-sm">
+                    <option value="all">All Time</option>
+                </select>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-indigo-500">
+                    <p class="text-xs font-bold text-gray-500 uppercase">Net Balance</p>
+                    <p id="summary-net" class="text-2xl font-bold text-gray-800">$0.00</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-green-500">
+                    <p class="text-xs font-bold text-gray-500 uppercase">Income</p>
+                    <p id="summary-income" class="text-2xl font-bold text-green-600">$0.00</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-red-500">
+                    <p class="text-xs font-bold text-gray-500 uppercase">Expenses</p>
+                    <p id="summary-expense" class="text-2xl font-bold text-red-600">$0.00</p>
+                </div>
+            </div>
+
+            <!-- Charts Area -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-4 rounded-xl card-shadow">
+                    <h3 class="font-bold text-gray-700 mb-4 text-sm">Budget vs Actual</h3>
+                    <div class="h-64"><canvas id="budgetChart"></canvas></div>
+                </div>
+                <div class="bg-white p-4 rounded-xl card-shadow">
+                    <h3 class="font-bold text-gray-700 mb-4 text-sm">Spending Breakdown</h3>
+                    <div class="h-64 flex justify-center"><canvas id="spendingChart"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Main Content Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- Right Column (Data/History) - Shows FIRST on Mobile -->
+                <div class="lg:col-span-2 space-y-6 order-1 lg:order-2">
+                    <!-- Budget Table -->
+                    <div class="bg-white rounded-xl card-shadow overflow-hidden">
+                        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 font-bold text-sm text-gray-700">Budget Performance</div>
+                        <div class="overflow-x-auto max-h-96 no-scrollbar">
+                            <table class="w-full text-sm text-left text-gray-500">
+                                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3">Category</th>
+                                        <th class="px-4 py-3 text-right">Budget</th>
+                                        <th class="px-4 py-3 text-right">Spent</th>
+                                        <th class="px-4 py-3 text-right">Left</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="budget-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- History Table -->
+                    <div class="bg-white rounded-xl card-shadow overflow-hidden">
+                        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                            <span class="font-bold text-sm text-gray-700">History</span>
+                            <input type="text" id="search-input" placeholder="Search..." class="text-xs p-1 border rounded w-32" oninput="updateDashboard()">
+                        </div>
+                        <div class="overflow-x-auto max-h-96">
+                            <table class="w-full text-sm text-left text-gray-500">
+                                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3">Date</th>
+                                        <th class="px-4 py-3">Desc</th>
+                                        <th class="px-4 py-3">Cat</th>
+                                        <th class="px-4 py-3 text-right">Amt</th>
+                                        <th class="px-4 py-3"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Left Column (Admin/Uploads) - Shows LAST on Mobile -->
+                <div class="lg:col-span-1 space-y-4 order-2 lg:order-1">
+                    <!-- Actions Card -->
+                    <div class="bg-white p-4 rounded-xl card-shadow space-y-4">
+                        <h3 class="font-bold text-gray-700 text-sm border-b pb-2">Uploads</h3>
+                        <!-- CSV Upload -->
+                        <div class="space-y-2">
+                            <label class="text-xs font-semibold text-gray-500 uppercase">Transactions (CSV)</label>
+                            <input type="file" id="csv-input" accept=".csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/>
+                            <p class="text-[10px] text-gray-400">Req: date, amount, type, description</p>
+                        </div>
+                        <!-- Rules Upload -->
+                        <div class="space-y-2">
+                            <label class="text-xs font-semibold text-gray-500 uppercase">Rules (CSV)</label>
+                            <input type="file" id="rules-input" accept=".csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"/>
+                            <p class="text-[10px] text-gray-400">Req: keyword, category</p>
+                        </div>
+                    </div>
+
+                    <!-- Data Management -->
+                    <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-blue-500">
+                        <h3 class="font-bold text-gray-700 text-sm mb-3">Data Management</h3>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="downloadBackup()" class="px-3 py-2 bg-blue-50 text-blue-700 rounded text-xs font-bold hover:bg-blue-100">Backup JSON</button>
+                            <label class="cursor-pointer px-3 py-2 bg-green-50 text-green-700 rounded text-xs font-bold hover:bg-green-100 text-center">
+                                Restore
+                                <input type="file" class="hidden" accept=".json" onchange="restoreBackup(event)">
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOGIC -->
+    <script>
+        // --- CONFIGURATION MANAGEMENT (HARDCODED) ---
+        let app, auth, db, user;
+        
+        // ** INSTRUCTION: PASTE YOUR FIREBASE CONFIG OBJECT HERE **
+        // NOTE: Replace the entire object below with your actual config.
+        const firebaseConfig = {
+  apiKey: "AIzaSyBTnbkONqHKqQXOi3FQBEAEL9VNV4_gZTo",
+  authDomain: "tb-budget-app.firebaseapp.com",
+  projectId: "tb-budget-app",
+  storageBucket: "tb-budget-app.firebasestorage.app",
+  messagingSenderId: "339537167812",
+  appId: "1:339537167812:web:a5012ceb3ae64ae120d091",
+  measurementId: "G-LDL269R8YQ"
+};
+        
+        // Check if configuration is a placeholder (indicating user hasn't pasted it)
+        const isPlaceholder = firebaseConfig.apiKey.includes('PASTE');
+
+        if (isPlaceholder) {
+            // If still placeholder, show setup error page
+            document.getElementById('auth-container').innerHTML = `
+                <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md space-y-6 text-center">
+                    <h1 class="text-3xl font-extrabold text-red-600">SETUP REQUIRED</h1>
+                    <p class="text-gray-600">The Firebase configuration is missing.</p>
+                    <p class="text-sm bg-red-50 p-3 rounded">
+                        Please edit the source code of this HTML file and paste your Firebase configuration object into the JavaScript section.
+                    </p>
+                </div>
+            `;
+            document.getElementById('dashboard-container').classList.add('hidden');
+
+        } else {
+            // Configuration exists, proceed with initialization
+            initFirebase(firebaseConfig);
+        }
+
+        function initFirebase(config) {
+            try {
+                // Compatibility imports use global firebase object
+                app = firebase.initializeApp(config);
+                auth = firebase.auth();
+                db = firebase.firestore();
+                
+                document.getElementById('loading-state').classList.remove('hidden');
+                document.getElementById('login-form').classList.remove('hidden');
+                
+                auth.onAuthStateChanged((currentUser) => {
+                    document.getElementById('loading-state').classList.add('hidden');
+                    if (currentUser) {
+                        user = currentUser;
+                        document.getElementById('auth-container').classList.add('hidden');
+                        document.getElementById('dashboard-container').classList.remove('hidden');
+                        document.getElementById('user-email-display').textContent = user.email;
+                        loadUserData();
+                    } else {
+                        document.getElementById('auth-container').classList.remove('hidden');
+                        document.getElementById('dashboard-container').classList.add('hidden');
+                        document.getElementById('login-form').classList.remove('hidden');
+                    }
+                });
+            } catch (e) {
+                alert("Error connecting to Firebase. Check console/config.");
+                console.error(e);
+                document.getElementById('auth-container').innerHTML = `
+                    <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md space-y-6 text-center">
+                        <h1 class="text-3xl font-extrabold text-red-600">CONNECTION FAILED</h1>
+                        <p class="text-gray-600">Review console errors and ensure Firebase services are enabled.</p>
+                    </div>
+                `;
+            }
+        }
+
+        // --- AUTHENTICATION ---
+        window.handleLogin = async () => {
+            const e = document.getElementById('email').value;
+            const p = document.getElementById('password').value;
+            document.getElementById('auth-error').classList.add('hidden');
+            try {
+                await auth.signInWithEmailAndPassword(e, p);
+            } catch (err) {
+                document.getElementById('auth-error').textContent = err.message;
+                document.getElementById('auth-error').classList.remove('hidden');
+            }
+        };
+
+        window.handleRegister = async () => {
+            const e = document.getElementById('email').value;
+            const p = document.getElementById('password').value;
+            document.getElementById('auth-error').classList.add('hidden');
+            try {
+                const cred = await auth.createUserWithEmailAndPassword(e, p);
+                // Ensure default categories are uploaded only upon successful first registration
+                await uploadDefaultCategories(cred.user.uid);
+            } catch (err) {
+                document.getElementById('auth-error').textContent = err.message;
+                document.getElementById('auth-error').classList.remove('hidden');
+            }
+        };
+
+        window.handleLogout = () => auth.signOut();
+
+
+        // --- APP LOGIC & STATE ---
+        let categories = [];
+        let transactions = [];
+        let rules = [];
+        let charts = {};
+
+        const DEFAULT_CATEGORIES = [
+            { id: 'unc-inc', name: 'Uncategorized Income', type: 'income', group: 'Income', budget: 0, sort: 1 },
+            { id: 'unc-exp', name: 'Uncategorized Expense', type: 'expense', group: 'Other Expenses', budget: 0, sort: 99 },
+            { id: 'nec-1', name: 'Groceries & Household', type: 'expense', group: 'Necessary Spending', budget: 850.00, sort: 10 },
+            { id: 'nec-2', name: 'House (auto-pay)', type: 'expense', group: 'Necessary Spending', budget: 2150.64, sort: 11 },
+            { id: 'nec-3', name: 'EDJ Roth auto-draft (1st of month)', type: 'expense', group: 'Necessary Spending', budget: 460.00, sort: 12 },
+            { id: 'nec-4', name: 'Electric (Ameren)', type: 'expense', group: 'Necessary Spending', budget: 200.00, sort: 13 },
+            { id: 'nec-5', name: 'Waste Management', type: 'expense', group: 'Necessary Spending', budget: 35.00, sort: 14 },
+            { id: 'nec-6', name: 'Water (PWSD)', type: 'expense', group: 'Necessary Spending', budget: 100.00, sort: 15 },
+            { id: 'nec-7', name: 'Sewage (American Water)', type: 'expense', group: 'Necessary Spending', budget: 70.00, sort: 16 },
+            { id: 'nec-8', name: 'Gas', type: 'expense', group: 'Necessary Spending', budget: 400.00, sort: 17 },
+            { id: 'nec-9', name: 'Internet (Spectrum)', type: 'expense', group: 'Necessary Spending', budget: 50.00, sort: 18 },
+            { id: 'nec-10', name: 'Gym Membership', type: 'expense', group: 'Necessary Spending', budget: 60.00, sort: 19 },
+            { id: 'nec-11', name: 'T-Mobile Cell Phone (auto-pay)', type: 'expense', group: 'Necessary Spending', budget: 60.00, sort: 20 },
+            { id: 'nec-12', name: 'Medical Insurance', type: 'expense', group: 'Necessary Spending', budget: 52.00, sort: 21 },
+            { id: 'nec-13', name: 'Lincoln Life Ins. ($26 & $22)', type: 'expense', group: 'Necessary Spending', budget: 48.00, sort: 22 },
+            { id: 'nec-14', name: 'Dental Insurance (Trevor)', type: 'expense', group: 'Necessary Spending', budget: 24.00, sort: 23 },
+            { id: 'nec-15', name: 'USAA (Car Insurance $90 twice/mo)', type: 'expense', group: 'Necessary Spending', budget: 208.00, sort: 24 },
+            { id: 'nec-16', name: 'Zander (ID Theft)', type: 'expense', group: 'Necessary Spending', budget: 13.00, sort: 25 },
+            { id: 'nec-17', name: 'App (25th auto-pay)', type: 'expense', group: 'Necessary Spending', budget: 17.00, sort: 26 },
+            { id: 'giv-1', name: 'Church', type: 'expense', group: 'Giving', budget: 325.00, sort: 30 },
+            { id: 'giv-2', name: 'Multiply Campaign', type: 'expense', group: 'Giving', budget: 85.00, sort: 31 },
+            { id: 'giv-3', name: 'Bloom INTL', type: 'expense', group: 'Giving', budget: 40.00, sort: 32 },
+            { id: 'giv-4', name: 'Convoy of Hope', type: 'expense', group: 'Giving', budget: 51.50, sort: 33 },
+            { id: 'giv-5', name: 'DirectConnect (PayPal 25th)', type: 'expense', group: 'Giving', budget: 20.00, sort: 34 },
+            { id: 'giv-6', name: 'Cheryl Recurring Donation', type: 'expense', group: 'Giving', budget: 51.50, sort: 35 },
+            { id: 'giv-7', name: 'Joy FM', type: 'expense', group: 'Giving', budget: 40.00, sort: 36 },
+            { id: 'giv-8', name: 'Hostetter Ministries', type: 'expense', group: 'Giving', budget: 80.00, sort: 37 },
+            { id: 'giv-9', name: 'Micellaneous Giving', type: 'expense', group: 'Giving', budget: 0.00, sort: 38 },
+            { id: 'giv-10', name: 'Transfer to Giving Savings', type: 'expense', group: 'Giving', budget: 40.00, sort: 39 },
+            { id: 'add-1', name: 'Eating Out/Dates', type: 'expense', group: 'Additional Spending', budget: 100.00, sort: 50 },
+            { id: 'add-2', name: 'Kristi Fun Money', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 51 },
+            { id: 'add-3', name: 'Trevor Fun Money', type: 'expense', group: 'Additional Spending', budget: 50.00, sort: 52 },
+            { id: 'add-4', name: 'icloud', type: 'expense', group: 'Additional Spending', budget: 4.00, sort: 53 },
+            { id: 'add-5', name: 'Streaming', type: 'expense', group: 'Additional Spending', budget: 10.00, sort: 54 },
+            { id: 'add-6', name: 'Home Spending', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 55 },
+            { id: 'add-7', name: 'Extra House Savings', type: 'expense', group: 'Additional Spending', budget: 150.00, sort: 56 },
+            { id: 'add-8', name: 'Overflow Savings', type: 'expense', group: 'Additional Spending', budget: 400.00, sort: 57 },
+            { id: 'add-9', name: 'Edward Jones Joint Transfer', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 58 },
+            { id: 'add-10', name: 'Arkansas Trip', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 59 },
+            { id: 'add-11', name: 'Doggy Daycare', type: 'expense', group: 'Additional Spending', budget: 144.00, sort: 60 },
+            { id: 'add-12', name: 'Unbudgeted Expenses', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 61 },
+            { id: 'inc-1', name: 'Salary (Kristi)', type: 'income', group: 'Income', budget: 0, sort: 2 },
+            { id: 'inc-2', name: 'Salary (Trevor)', type: 'income', group: 'Income', budget: 0, sort: 3 },
+        ];
+
+        async function loadUserData() {
+            await Promise.all([fetchCategories(), fetchTransactions(), fetchRules()]);
+            updateDashboard();
+        }
+
+        async function fetchCategories() {
+            const snap = await db.collection(`users/${user.uid}/categories`).get();
+            if (snap.empty) {
+                categories = DEFAULT_CATEGORIES;
+            } else {
+                categories = snap.docs.map(d => d.data());
+            }
+        }
+
+        async function fetchTransactions() {
+            const snap = await db.collection(`users/${user.uid}/transactions`).get();
+            transactions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        }
+
+        async function fetchRules() {
+            const snap = await db.collection(`users/${user.uid}/rules`).get();
+            rules = snap.docs.map(d => d.data());
+        }
+
+        async function uploadDefaultCategories(uid) {
+            const batch = db.batch();
+            DEFAULT_CATEGORIES.forEach(cat => {
+                const ref = db.collection(`users/${uid}/categories`).doc(cat.id);
+                batch.set(ref, cat);
+            });
+            await batch.commit();
+        }
+
+        // --- DASHBOARD LOGIC ---
+
+        window.updateDashboard = () => {
+            const filterMonth = document.getElementById('month-selector').value;
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+            
+            // Filter Transactions
+            const filtered = transactions.filter(t => {
+                const matchesMonth = filterMonth === 'all' || t.date.startsWith(filterMonth);
+                const matchesSearch = !searchTerm || 
+                    t.description.toLowerCase().includes(searchTerm) || 
+                    t.category.toLowerCase().includes(searchTerm) || 
+                    t.amount.toString().includes(searchTerm);
+                return matchesMonth && matchesSearch;
+            });
+
+            updateMonthSelector();
+            updateSummary(filtered);
+            updateCharts(filtered);
+            updateBudgetTable(filtered);
+            updateHistoryTable(filtered);
+        }
+
+        function updateMonthSelector() {
+            const selector = document.getElementById('month-selector');
+            const months = [...new Set(transactions.map(t => t.date.substring(0, 7)))].sort().reverse();
+            const currentVal = selector.value;
+            
+            if (selector.options.length !== months.length + 1) {
+                selector.innerHTML = '<option value="all">All Time</option>';
+                months.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m;
+                    opt.text = m;
+                    selector.appendChild(opt);
+                });
+                selector.value = currentVal; 
+            }
+        }
+
+        function updateSummary(txs) {
+            const income = txs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+            const expense = txs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+            
+            document.getElementById('summary-income').textContent = formatMoney(income);
+            document.getElementById('summary-expense').textContent = formatMoney(expense);
+            document.getElementById('summary-net').textContent = formatMoney(income - expense);
+            document.getElementById('summary-net').className = `text-2xl font-bold ${income - expense >= 0 ? 'text-green-600' : 'text-red-600'}`;
+        }
+
+        function updateCharts(txs) {
+            // Budget vs Actual (Bar)
+            const groups = ['Necessary Spending', 'Giving', 'Additional Spending', 'Other Expenses'];
+            const actualData = groups.map(g => txs.filter(t => getCatGroup(t.category) === g && t.type === 'expense').reduce((sum, t) => sum + t.amount, 0));
+            
+            const multiplier = document.getElementById('month-selector').value === 'all' ? (new Set(txs.map(t => t.date.substring(0,7))).size || 1) : 1;
+            
+            const budgetData = groups.map(g => {
+                return categories.filter(c => c.group === g).reduce((sum, c) => sum + (c.budget || 0), 0) * multiplier;
+            });
+
+            renderChart('budgetChart', 'bar', {
+                labels: groups,
+                datasets: [
+                    { label: 'Spent', data: actualData, backgroundColor: '#ef4444' },
+                    { label: 'Budget', data: budgetData, backgroundColor: '#3b82f6' }
+                ]
+            });
+
+            // Spending Breakdown (Doughnut)
+            const expenses = txs.filter(t => t.type === 'expense');
+            const catTotals = {};
+            expenses.forEach(t => catTotals[t.category] = (catTotals[t.category] || 0) + t.amount);
+            const sortedCats = Object.entries(catTotals).sort((a,b) => b[1] - a[1]).slice(0, 8); 
+
+            renderChart('spendingChart', 'doughnut', {
+                labels: sortedCats.map(x => x[0]),
+                datasets: [{
+                    data: sortedCats.map(x => x[1]),
+                    backgroundColor: ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1', '#9ca3af']
+                }]
+            });
+        }
+
+        function updateBudgetTable(txs) {
+            const tbody = document.getElementById('budget-table-body');
+            const multiplier = document.getElementById('month-selector').value === 'all' ? (new Set(txs.map(t => t.date.substring(0,7))).size || 1) : 1;
+            
+            // Aggregate spending
+            const spendMap = {};
+            txs.forEach(t => spendMap[t.category] = (spendMap[t.category] || 0) + t.amount);
+
+            let html = '';
+            const groups = ['Necessary Spending', 'Giving', 'Additional Spending', 'Other Expenses'];
+            
+            groups.forEach(group => {
+                const groupCats = categories.filter(c => c.group === group && c.type === 'expense').sort((a,b) => (a.sort || 100) - (b.sort || 100));
+                if (groupCats.length === 0) return;
+
+                html += `<tr class="bg-gray-100 font-bold text-xs uppercase"><td colspan="4" class="px-4 py-2">${group}</td></tr>`;
+                
+                groupCats.forEach(cat => {
+                    const spent = spendMap[cat.name] || 0;
+                    const budget = (cat.budget || 0) * multiplier;
+                    const left = budget - spent;
+                    const color = left < 0 ? 'text-red-600 font-bold' : 'text-green-600 font-bold';
+                    
+                    html += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="px-4 py-2">${cat.name}</td>
+                            <td class="px-4 py-2 text-right text-gray-400">${formatMoney(budget)}</td>
+                            <td class="px-4 py-2 text-right">${formatMoney(spent)}</td>
+                            <td class="px-4 py-2 text-right ${color}">${formatMoney(left)}</td>
+                        </tr>
+                    `;
+                });
+            });
+            tbody.innerHTML = html;
+        }
+
+        function updateHistoryTable(txs) {
+            const tbody = document.getElementById('history-table-body');
+            const sorted = [...txs].sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            tbody.innerHTML = sorted.map(t => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="px-4 py-2 text-xs text-gray-500">${t.date}</td>
+                    <td class="px-4 py-2 font-medium">${t.description}</td>
+                    <td class="px-4 py-2 text-xs bg-gray-100 rounded inline-block mt-2 mb-2 ml-2">${t.category}</td>
+                    <td class="px-4 py-2 text-right font-bold ${t.type==='income'?'text-green-600':'text-red-600'}">${formatMoney(t.amount)}</td>
+                    <td class="px-4 py-2 text-right">
+                        <button onclick="deleteTransaction('${t.id}')" class="text-red-400 hover:text-red-600">&times;</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // --- HELPERS & IMPORTERS ---
+
+        window.deleteTransaction = async (id) => {
+            if(confirm("Delete this transaction?")) {
+                await db.collection(`users/${user.uid}/transactions`).doc(id).delete();
+                await fetchTransactions(); 
+                updateDashboard();
+            }
+        };
+        
+        // Backup to JSON file
+        window.downloadBackup = () => {
+            const data = { categories, transactions, rules };
+            const dataStr = JSON.stringify(data, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `cloud_budget_backup_${new Date().toISOString().slice(0,10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+        
+        // Restore from JSON file (Danger: Overwrites/Adds)
+        window.restoreBackup = async (event) => {
+             const file = event.target.files[0];
+             if (!file) return;
+             
+             if(!confirm("WARNING: This will upload data from the backup file to the cloud, potentially creating duplicates or overwriting existing data. Continue?")) return;
+             
+             const reader = new FileReader();
+             reader.onload = async (e) => {
+                 try {
+                     const data = JSON.parse(e.target.result);
+                     const batch = db.batch();
+                     let opCount = 0;
+                     
+                     const checkBatch = async (currentBatch) => {
+                         if(opCount >= 450) {
+                             await currentBatch.commit();
+                             opCount = 0;
+                             return db.batch(); 
+                         }
+                         return currentBatch;
+                     };
+                     
+                     let currentBatch = db.batch();
+
+                     // Categories
+                     for (const cat of (data.categories || [])) {
+                         const ref = db.collection(`users/${user.uid}/categories`).doc(cat.id); // Use provided ID if available
+                         currentBatch.set(ref, cat);
+                         opCount++;
+                         currentBatch = await checkBatch(currentBatch);
+                     }
+                     
+                     // Transactions
+                     for (const tx of (data.transactions || [])) {
+                         const ref = db.collection(`users/${user.uid}/transactions`).doc(tx.id); // Use provided ID
+                         currentBatch.set(ref, tx);
+                         opCount++;
+                         currentBatch = await checkBatch(currentBatch);
+                     }
+                     
+                     // Rules
+                     for (const r of (data.rules || [])) {
+                         const ref = db.collection(`users/${user.uid}/rules`).doc(); // Generate new ID
+                         currentBatch.set(ref, r);
+                         opCount++;
+                         currentBatch = await checkBatch(currentBatch);
+                     }
+                     
+                     await currentBatch.commit();
+                     alert("Restore complete! Refreshing dashboard to sync changes.");
+                     await loadUserData();
+                     
+                 } catch(err) {
+                     alert("Error restoring: " + err.message);
+                 }
+             };
+             reader.readAsText(file);
+             event.target.value = '';
+        };
+
+        // Export data to a JSON file (simple data dump for report viewing)
+        window.exportPortableReport = () => {
+            const data = { 
+                reportDate: new Date().toISOString(),
+                categories, 
+                transactions, 
+                rules 
+            };
+            const dataStr = JSON.stringify(data, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Budget_Report_Data_${new Date().toISOString().slice(0,10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        function getCatGroup(catName) {
+            const c = categories.find(x => x.name === catName);
+            return c ? c.group : 'Other Expenses';
+        }
+
+        function formatMoney(num) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
+        }
+
+        function renderChart(canvasId, type, data) {
+            if (charts[canvasId]) charts[canvasId].destroy();
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            charts[canvasId] = new Chart(ctx, {
+                type: type,
+                data: data,
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: type === 'doughnut' ? 'right' : 'top' }
+                    }
+                }
+            });
+        }
+
+        // CSV Parsers (Simplified for Cloud Version)
+        document.getElementById('csv-input').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const text = await file.text();
+            const rows = text.split('\n').slice(1); // skip header
+            const batch = db.batch();
+            let count = 0;
+
+            const existingSigs = new Set(transactions.map(t => `${t.date}-${t.amount}-${t.description}`));
+
+            rows.forEach(row => {
+                const cols = row.split(','); 
+                if(cols.length < 4) return;
+                const date = cols[0].trim();
+                const amount = parseFloat(cols[1].trim());
+                const typeRaw = cols[2].trim().toLowerCase();
+                const desc = cols[3].trim();
+
+                let category = (typeRaw.includes('credit') || typeRaw.includes('inc')) ? 'Uncategorized Income' : 'Uncategorized Expense';
+                
+                const matchingRule = rules.find(r => desc.toUpperCase().includes(r.keyword.toUpperCase()));
+                if (matchingRule) category = matchingRule.categoryName;
+
+                const sig = `${date}-${amount}-${desc}`;
+                if (existingSigs.has(sig)) return;
+
+                const newDoc = db.collection(`users/${user.uid}/transactions`).doc();
+                batch.set(newDoc, {
+                    date, amount, description: desc, category,
+                    type: (typeRaw.includes('credit') || typeRaw.includes('inc')) ? 'income' : 'expense'
+                });
+                count++;
+            });
+
+            await batch.commit();
+            alert(`Uploaded ${count} new transactions. Dashboard will refresh.`);
+            e.target.value = '';
+            await fetchTransactions();
+            updateDashboard();
+        });
+
+        document.getElementById('rules-input').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const text = await file.text();
+            const rows = text.split('\n').slice(1);
+            const batch = db.batch();
+            
+            rows.forEach(row => {
+                const cols = row.split(',');
+                if(cols.length < 2) return;
+                const keyword = cols[0].trim();
+                const categoryName = cols[1].trim();
+                const ref = db.collection(`users/${user.uid}/rules`).doc();
+                batch.set(ref, { keyword, categoryName });
+            });
+            await batch.commit();
+            alert("Rules imported. Dashboard will refresh.");
+            e.target.value = '';
+            await fetchRules();
+        });
+
+    </script>
+</body>
+</html>
