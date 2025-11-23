@@ -28,6 +28,17 @@
         /* Hide scrollbar for clean UI */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Highlight Uncategorized Rows */
+        .uncategorized-row {
+            background-color: #fffbeb !important; /* Yellow-50 */
+        }
+        /* Highlight Uncategorized Category Tag */
+        .uncategorized-tag {
+            background-color: #fcd34d !important; /* amber-400 */
+            color: #78350f !important; /* amber-900 */
+            font-weight: 700;
+        }
     </style>
 </head>
 <body class="min-h-screen text-gray-800 pb-20">
@@ -165,7 +176,7 @@
                         <!-- CSV Upload -->
                         <div class="space-y-2">
                             <label class="text-xs font-semibold text-gray-500 uppercase">Transactions (CSV)</label>
-                            <input type="file" id="csv-input" accept=".csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/>
+                            <input type="file" id="csv-input" accept=".csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/>
                             <p class="text-[10px] text-gray-400">Req: date, amount, type, description</p>
                         </div>
                         <!-- Rules Upload -->
@@ -303,8 +314,14 @@
         let charts = {};
 
         const DEFAULT_CATEGORIES = [
+            // Sorted to match display order in your budget
             { id: 'unc-inc', name: 'Uncategorized Income', type: 'income', group: 'Income', budget: 0, sort: 1 },
             { id: 'unc-exp', name: 'Uncategorized Expense', type: 'expense', group: 'Other Expenses', budget: 0, sort: 99 },
+            { id: 'inc-1', name: 'Salary (Kristi)', type: 'income', group: 'Income', budget: 2900.00, sort: 2 },
+            { id: 'inc-2', name: 'Salary (Trevor)', type: 'income', group: 'Income', budget: 2600.00, sort: 3 },
+            { id: 'inc-3', name: 'Extra Income', type: 'income', group: 'Income', budget: 2800.00, sort: 4 },
+            
+            // Necessary Spending (Sort 10-26)
             { id: 'nec-1', name: 'Groceries & Household', type: 'expense', group: 'Necessary Spending', budget: 850.00, sort: 10 },
             { id: 'nec-2', name: 'House (auto-pay)', type: 'expense', group: 'Necessary Spending', budget: 2150.64, sort: 11 },
             { id: 'nec-3', name: 'EDJ Roth auto-draft (1st of month)', type: 'expense', group: 'Necessary Spending', budget: 460.00, sort: 12 },
@@ -322,6 +339,8 @@
             { id: 'nec-15', name: 'USAA (Car Insurance $90 twice/mo)', type: 'expense', group: 'Necessary Spending', budget: 208.00, sort: 24 },
             { id: 'nec-16', name: 'Zander (ID Theft)', type: 'expense', group: 'Necessary Spending', budget: 13.00, sort: 25 },
             { id: 'nec-17', name: 'App (25th auto-pay)', type: 'expense', group: 'Necessary Spending', budget: 17.00, sort: 26 },
+            
+            // Giving (Sort 30-39)
             { id: 'giv-1', name: 'Church', type: 'expense', group: 'Giving', budget: 325.00, sort: 30 },
             { id: 'giv-2', name: 'Multiply Campaign', type: 'expense', group: 'Giving', budget: 85.00, sort: 31 },
             { id: 'giv-3', name: 'Bloom INTL', type: 'expense', group: 'Giving', budget: 40.00, sort: 32 },
@@ -332,6 +351,8 @@
             { id: 'giv-8', name: 'Hostetter Ministries', type: 'expense', group: 'Giving', budget: 80.00, sort: 37 },
             { id: 'giv-9', name: 'Micellaneous Giving', type: 'expense', group: 'Giving', budget: 0.00, sort: 38 },
             { id: 'giv-10', name: 'Transfer to Giving Savings', type: 'expense', group: 'Giving', budget: 40.00, sort: 39 },
+            
+            // Additional Spending (Sort 50-61)
             { id: 'add-1', name: 'Eating Out/Dates', type: 'expense', group: 'Additional Spending', budget: 100.00, sort: 50 },
             { id: 'add-2', name: 'Kristi Fun Money', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 51 },
             { id: 'add-3', name: 'Trevor Fun Money', type: 'expense', group: 'Additional Spending', budget: 50.00, sort: 52 },
@@ -344,18 +365,25 @@
             { id: 'add-10', name: 'Arkansas Trip', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 59 },
             { id: 'add-11', name: 'Doggy Daycare', type: 'expense', group: 'Additional Spending', budget: 144.00, sort: 60 },
             { id: 'add-12', name: 'Unbudgeted Expenses', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 61 },
-            { id: 'inc-1', name: 'Salary (Kristi)', type: 'income', group: 'Income', budget: 0, sort: 2 },
-            { id: 'inc-2', name: 'Salary (Trevor)', type: 'income', group: 'Income', budget: 0, sort: 3 },
         ];
 
         async function loadUserData() {
+            // Only runs after user is logged in
+            document.getElementById('dashboard-container').style.opacity = 0.5;
+
             await Promise.all([fetchCategories(), fetchTransactions(), fetchRules()]);
+            
+            // Wait for charts to load and data to process before updating UI
+            await new Promise(resolve => setTimeout(resolve, 50)); 
+            
             updateDashboard();
+            document.getElementById('dashboard-container').style.opacity = 1;
         }
 
         async function fetchCategories() {
             const snap = await db.collection(`users/${user.uid}/categories`).get();
             if (snap.empty) {
+                // If the user is brand new (just signed up), use the local defaults.
                 categories = DEFAULT_CATEGORIES;
             } else {
                 categories = snap.docs.map(d => d.data());
@@ -389,7 +417,10 @@
             
             // Filter Transactions
             const filtered = transactions.filter(t => {
-                const matchesMonth = filterMonth === 'all' || t.date.startsWith(filterMonth);
+                // FIX: Ensure t.date has YYYY-MM format before comparison
+                const month = t.date ? t.date.substring(0, 7) : 'invalid'; 
+                const matchesMonth = filterMonth === 'all' || month === filterMonth;
+                
                 const matchesSearch = !searchTerm || 
                     t.description.toLowerCase().includes(searchTerm) || 
                     t.category.toLowerCase().includes(searchTerm) || 
@@ -406,7 +437,8 @@
 
         function updateMonthSelector() {
             const selector = document.getElementById('month-selector');
-            const months = [...new Set(transactions.map(t => t.date.substring(0, 7)))].sort().reverse();
+            // FIX: Ensure we are mapping to YYYY-MM for the selector
+            const months = [...new Set(transactions.map(t => t.date ? t.date.substring(0, 7) : null).filter(m => m !== null))].sort().reverse();
             const currentVal = selector.value;
             
             if (selector.options.length !== months.length + 1) {
@@ -414,7 +446,13 @@
                 months.forEach(m => {
                     const opt = document.createElement('option');
                     opt.value = m;
-                    opt.text = m;
+                    // Format month for display (e.g., 2025-11 -> Nov 2025)
+                    try {
+                        const date = new Date(m + '-01');
+                        opt.text = date.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+                    } catch {
+                        opt.text = m;
+                    }
                     selector.appendChild(opt);
                 });
                 selector.value = currentVal; 
@@ -505,17 +543,25 @@
             const tbody = document.getElementById('history-table-body');
             const sorted = [...txs].sort((a, b) => new Date(b.date) - new Date(a.date));
             
-            tbody.innerHTML = sorted.map(t => `
-                <tr class="border-b hover:bg-gray-50">
-                    <td class="px-4 py-2 text-xs text-gray-500">${t.date}</td>
-                    <td class="px-4 py-2 font-medium">${t.description}</td>
-                    <td class="px-4 py-2 text-xs bg-gray-100 rounded inline-block mt-2 mb-2 ml-2">${t.category}</td>
-                    <td class="px-4 py-2 text-right font-bold ${t.type==='income'?'text-green-600':'text-red-600'}">${formatMoney(t.amount)}</td>
-                    <td class="px-4 py-2 text-right">
-                        <button onclick="deleteTransaction('${t.id}')" class="text-red-400 hover:text-red-600">&times;</button>
-                    </td>
-                </tr>
-            `).join('');
+            tbody.innerHTML = sorted.map(t => {
+                const isExpense = t.type === 'expense';
+                const isUncategorized = t.category === 'Uncategorized Income' || t.category === 'Uncategorized Expense';
+                const amountColor = isExpense ? 'text-red-600' : 'text-green-600';
+                const rowClass = isUncategorized ? 'uncategorized-row' : '';
+                const categoryClass = isUncategorized ? 'uncategorized-tag' : 'bg-gray-100';
+
+                return `
+                    <tr class="border-b hover:bg-gray-50 ${rowClass}">
+                        <td class="px-4 py-2 text-xs text-gray-500">${t.date}</td>
+                        <td class="px-4 py-2 font-medium">${t.description}</td>
+                        <td class="px-4 py-2 text-xs ${categoryClass} rounded inline-block mt-2 mb-2 ml-2">${t.category}</td>
+                        <td class="px-4 py-2 text-right font-bold ${amountColor}">${formatMoney(t.amount)}</td>
+                        <td class="px-4 py-2 text-right">
+                            <button onclick="deleteTransaction('${t.id}')" class="text-red-400 hover:text-red-600">&times;</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
         }
 
         // --- HELPERS & IMPORTERS ---
