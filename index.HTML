@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cloud Budget Tracker</title>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Cloud Budget">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- FIREBASE COMPATIBILITY LIBS -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; }
+        input, select, button { font-size: 16px !important; }
+        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .uncategorized-row { background-color: #fffbeb !important; }
+        .uncategorized-tag { background-color: #fcd34d !important; color: #78350f !important; font-weight: 700; }
+    </style>
+</head>
+<body class="min-h-screen text-gray-800 pb-20">
+
+    <!-- LOGIN -->
+    <div id="auth-container" class="min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md space-y-6">
+            <h1 class="text-3xl font-extrabold text-center text-indigo-600">Cloud Budget</h1>
+            
+            <div id="config-form" class="hidden space-y-4">
+                <div class="bg-yellow-50 p-4 text-xs text-yellow-800 rounded"><strong>Action Required:</strong> Paste Firebase Config below.</div>
+                <textarea id="firebase-config-input" rows="6" class="w-full p-3 border rounded text-xs font-mono bg-gray-50"></textarea>
+                <button onclick="saveConfig()" class="w-full py-3 bg-gray-800 text-white rounded font-bold">Save Configuration</button>
+            </div>
+
+            <div id="login-form" class="hidden space-y-4">
+                <input type="email" id="email" placeholder="Email" class="w-full p-3 border rounded-lg" />
+                <input type="password" id="password" placeholder="Password" class="w-full p-3 border rounded-lg" />
+                <div class="flex gap-2">
+                    <button onclick="handleLogin()" class="flex-1 py-3 bg-indigo-600 text-white rounded-lg font-bold">Log In</button>
+                    <button onclick="handleRegister()" class="flex-1 py-3 border border-indigo-600 text-indigo-600 rounded-lg font-bold">Sign Up</button>
+                </div>
+                <p id="auth-error" class="text-red-500 text-center text-sm hidden"></p>
+            </div>
+            <div id="loading-state" class="hidden text-center text-gray-500">Connecting...</div>
+        </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="dashboard-container" class="hidden">
+        <header class="bg-indigo-700 text-white p-4 shadow-lg sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+                <div>
+                    <h1 class="text-xl font-bold">My Budget</h1>
+                    <p id="user-email-display" class="text-xs text-indigo-200">Syncing...</p>
+                </div>
+                
+                <div class="flex items-center gap-2 bg-indigo-800 p-1.5 rounded-lg">
+                    <label class="text-xs font-bold uppercase tracking-wide text-indigo-200">Period:</label>
+                    <select id="header-month-selector" onchange="window.updateDashboard()" class="bg-white text-indigo-900 text-sm font-bold rounded px-2 py-1 outline-none cursor-pointer">
+                        <option value="all">All Time</option>
+                    </select>
+                </div>
+
+                <div class="flex gap-2">
+                    <button onclick="exportPortableReport()" class="text-xs bg-indigo-600 border border-indigo-400 px-3 py-1 rounded">Report</button>
+                    <button onclick="handleLogout()" class="text-xs bg-indigo-800 border border-indigo-600 px-3 py-1 rounded">Logout</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="max-w-7xl mx-auto p-4 space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-indigo-500">
+                    <p class="text-xs font-bold text-gray-500 uppercase">Net Balance</p>
+                    <p id="summary-net" class="text-2xl font-bold text-gray-800">$0.00</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-green-500">
+                    <p class="text-xs font-bold text-gray-500 uppercase">Income</p>
+                    <p id="summary-income" class="text-2xl font-bold text-green-600">$0.00</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-red-500">
+                    <p class="text-xs font-bold text-gray-500 uppercase">Expenses</p>
+                    <p id="summary-expense" class="text-2xl font-bold text-red-600">$0.00</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-4 rounded-xl card-shadow h-64"><canvas id="budgetChart"></canvas></div>
+                <div class="bg-white p-4 rounded-xl card-shadow h-64"><canvas id="spendingChart"></canvas></div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 space-y-6 order-1 lg:order-2">
+                    <div class="bg-white rounded-xl card-shadow overflow-hidden">
+                        <div class="bg-gray-50 px-4 py-3 border-b font-bold text-sm text-gray-700 flex justify-between">
+                            <span>Budget Performance</span>
+                            <span id="budget-multiplier-label" class="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">...</span>
+                        </div>
+                        <div class="overflow-x-auto max-h-96 no-scrollbar">
+                            <table class="w-full text-sm text-left text-gray-500">
+                                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                    <tr><th class="px-4 py-3">Category</th><th class="px-4 py-3 text-right">Limit</th><th class="px-4 py-3 text-right">Spent</th><th class="px-4 py-3 text-right">Left</th></tr>
+                                </thead>
+                                <tbody id="budget-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl card-shadow overflow-hidden">
+                        <div class="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
+                            <span class="font-bold text-sm text-gray-700">Transactions</span>
+                            <input type="text" id="search-input" placeholder="Search..." class="text-xs p-1 border rounded w-32" oninput="window.updateDashboard()">
+                        </div>
+                        <div class="overflow-x-auto max-h-96">
+                            <table class="w-full text-sm text-left text-gray-500">
+                                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                    <tr><th class="px-4 py-3">Date</th><th class="px-4 py-3">Desc</th><th class="px-4 py-3">Cat</th><th class="px-4 py-3 text-right">Amt</th><th class="px-4 py-3"></th></tr>
+                                </thead>
+                                <tbody id="history-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-1 space-y-4 order-2 lg:order-1">
+                    <div class="bg-white p-4 rounded-xl card-shadow space-y-4">
+                        <h3 class="font-bold text-gray-700 text-sm border-b pb-2">Uploads</h3>
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-500">Transactions CSV</label>
+                            <input type="file" id="csv-input" accept=".csv" class="block w-full text-xs"/>
+                            <p class="text-[10px] text-gray-400">Required: date (mm/dd/yyyy), amount, type</p>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-500">Rules CSV</label>
+                            <input type="file" id="rules-input" accept=".csv" class="block w-full text-xs"/>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-blue-500">
+                         <h3 class="font-bold text-gray-700 text-sm mb-2">Data Management</h3>
+                         <div class="flex gap-2">
+                             <button onclick="window.downloadBackup()" class="flex-1 bg-blue-50 text-blue-700 text-xs font-bold py-2 rounded">Backup</button>
+                             <button onclick="document.getElementById('restore-input').click()" class="flex-1 bg-green-50 text-green-700 text-xs font-bold py-2 rounded">Restore</button>
+                             <input type="file" id="restore-input" class="hidden" accept=".json" onchange="window.restoreBackup(event)">
+                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- FIREBASE CONFIG (PASTE HERE) ---
+        const firebaseConfig = {
+  apiKey: "AIzaSyBTnbkONqHKqQXOi3FQBEAEL9VNV4_gZTo",
+  authDomain: "tb-budget-app.firebaseapp.com",
+  projectId: "tb-budget-app",
+  storageBucket: "tb-budget-app.firebasestorage.app",
+  messagingSenderId: "339537167812",
+  appId: "1:339537167812:web:a5012ceb3ae64ae120d091",
+  measurementId: "G-LDL269R8YQ"
+};
+
+        // --- GLOBAL VARS ---
+        let app, auth, db, user;
+        let categories = [], transactions = [], rules = [];
+        let charts = {};
+        let currentMonthFilter = 'all';
+
+        // --- DEFAULT DATA ---
+        const DEFAULT_CATEGORIES = [
+            { id: 'unc-inc', name: 'Uncategorized Income', type: 'income', group: 'Income', budget: 0, sort: 1 },
+            { id: 'unc-exp', name: 'Uncategorized Expense', type: 'expense', group: 'Other Expenses', budget: 0, sort: 99 },
+            { id: 'nec-1', name: 'Groceries & Household', type: 'expense', group: 'Necessary Spending', budget: 850.00, sort: 10 },
+            { id: 'nec-2', name: 'House (auto-pay)', type: 'expense', group: 'Necessary Spending', budget: 2150.64, sort: 11 },
+            { id: 'nec-3', name: 'EDJ Roth auto-draft (1st of month)', type: 'expense', group: 'Necessary Spending', budget: 460.00, sort: 12 },
+            { id: 'nec-4', name: 'Electric (Ameren)', type: 'expense', group: 'Necessary Spending', budget: 200.00, sort: 13 },
+            { id: 'nec-5', name: 'Waste Management', type: 'expense', group: 'Necessary Spending', budget: 35.00, sort: 14 },
+            { id: 'nec-6', name: 'Water (PWSD)', type: 'expense', group: 'Necessary Spending', budget: 100.00, sort: 15 },
+            { id: 'nec-7', name: 'Sewage (American Water)', type: 'expense', group: 'Necessary Spending', budget: 70.00, sort: 16 },
+            { id: 'nec-8', name: 'Gas', type: 'expense', group: 'Necessary Spending', budget: 400.00, sort: 17 },
+            { id: 'nec-9', name: 'Internet (Spectrum)', type: 'expense', group: 'Necessary Spending', budget: 50.00, sort: 18 },
+            { id: 'nec-10', name: 'Gym Membership', type: 'expense', group: 'Necessary Spending', budget: 60.00, sort: 19 },
+            { id: 'nec-11', name: 'T-Mobile Cell Phone (auto-pay)', type: 'expense', group: 'Necessary Spending', budget: 60.00, sort: 20 },
+            { id: 'nec-12', name: 'Medical Insurance', type: 'expense', group: 'Necessary Spending', budget: 52.00, sort: 21 },
+            { id: 'nec-13', name: 'Lincoln Life Ins. ($26 & $22)', type: 'expense', group: 'Necessary Spending', budget: 48.00, sort: 22 },
+            { id: 'nec-14', name: 'Dental Insurance (Trevor)', type: 'expense', group: 'Necessary Spending', budget: 24.00, sort: 23 },
+            { id: 'nec-15', name: 'USAA (Car Insurance $90 twice/mo)', type: 'expense', group: 'Necessary Spending', budget: 208.00, sort: 24 },
+            { id: 'nec-16', name: 'Zander (ID Theft)', type: 'expense', group: 'Necessary Spending', budget: 13.00, sort: 25 },
+            { id: 'nec-17', name: 'App (25th auto-pay)', type: 'expense', group: 'Necessary Spending', budget: 17.00, sort: 26 },
+            { id: 'giv-1', name: 'Church', type: 'expense', group: 'Giving', budget: 325.00, sort: 30 },
+            { id: 'giv-2', name: 'Multiply Campaign', type: 'expense', group: 'Giving', budget: 85.00, sort: 31 },
+            { id: 'giv-3', name: 'Bloom INTL', type: 'expense', group: 'Giving', budget: 40.00, sort: 32 },
+            { id: 'giv-4', name: 'Convoy of Hope', type: 'expense', group: 'Giving', budget: 51.50, sort: 33 },
+            { id: 'giv-5', name: 'DirectConnect (PayPal 25th)', type: 'expense', group: 'Giving', budget: 20.00, sort: 34 },
+            { id: 'giv-6', name: 'Cheryl Recurring Donation', type: 'expense', group: 'Giving', budget: 51.50, sort: 35 },
+            { id: 'giv-7', name: 'Joy FM', type: 'expense', group: 'Giving', budget: 40.00, sort: 36 },
+            { id: 'giv-8', name: 'Hostetter Ministries', type: 'expense', group: 'Giving', budget: 80.00, sort: 37 },
+            { id: 'giv-9', name: 'Micellaneous Giving', type: 'expense', group: 'Giving', budget: 0.00, sort: 38 },
+            { id: 'giv-10', name: 'Transfer to Giving Savings', type: 'expense', group: 'Giving', budget: 40.00, sort: 39 },
+            { id: 'add-1', name: 'Eating Out/Dates', type: 'expense', group: 'Additional Spending', budget: 100.00, sort: 50 },
+            { id: 'add-2', name: 'Kristi Fun Money', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 51 },
+            { id: 'add-3', name: 'Trevor Fun Money', type: 'expense', group: 'Additional Spending', budget: 50.00, sort: 52 },
+            { id: 'add-4', name: 'icloud', type: 'expense', group: 'Additional Spending', budget: 4.00, sort: 53 },
+            { id: 'add-5', name: 'Streaming', type: 'expense', group: 'Additional Spending', budget: 10.00, sort: 54 },
+            { id: 'add-6', name: 'Home Spending', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 55 },
+            { id: 'add-7', name: 'Extra House Savings', type: 'expense', group: 'Additional Spending', budget: 150.00, sort: 56 },
+            { id: 'add-8', name: 'Overflow Savings', type: 'expense', group: 'Additional Spending', budget: 400.00, sort: 57 },
+            { id: 'add-9', name: 'Edward Jones Joint Transfer', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 58 },
+            { id: 'add-10', name: 'Arkansas Trip', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 59 },
+            { id: 'add-11', name: 'Doggy Daycare', type: 'expense', group: 'Additional Spending', budget: 144.00, sort: 60 },
+            { id: 'add-12', name: 'Unbudgeted Expenses', type: 'expense', group: 'Additional Spending', budget: 0.00, sort: 61 },
+            { id: 'inc-1', name: 'Salary (Kristi)', type: 'income', group: 'Income', budget: 0, sort: 2 },
+            { id: 'inc-2', name: 'Salary (Trevor)', type: 'income', group: 'Income', budget: 0, sort: 3 },
+        ];
+
+        // --- INITIALIZATION & AUTH ---
+        const storedConfig = localStorage.getItem('app_firebase_config');
+        if(firebaseConfig.apiKey.includes('PASTE')) {
+            if(storedConfig) initFirebase(JSON.parse(storedConfig));
+            else document.getElementById('config-form').classList.remove('hidden');
+        } else {
+            initFirebase(firebaseConfig);
+        }
+
+        window.saveConfig = () => {
+            try {
+                let val = document.getElementById('firebase-config-input').value.trim();
+                if(!val.startsWith('{')) val = `{${val}}`; // Add braces if missing
+                const c = JSON.parse(val);
+                localStorage.setItem('app_firebase_config', JSON.stringify(c));
+                initFirebase(c);
+                document.getElementById('config-form').classList.add('hidden');
+            } catch(e) { alert("Invalid JSON. Copy exactly."); }
+        };
+
+        function initFirebase(cfg) {
+            try {
+                app = firebase.initializeApp(cfg);
+                auth = firebase.auth();
+                db = firebase.firestore();
+                auth.onAuthStateChanged(u => {
+                    document.getElementById('loading-state').classList.add('hidden');
+                    if(u) {
+                        user = u;
+                        document.getElementById('auth-container').classList.add('hidden');
+                        document.getElementById('dashboard-container').classList.remove('hidden');
+                        document.getElementById('user-email-display').textContent = u.email;
+                        loadData();
+                    } else {
+                        document.getElementById('auth-container').classList.remove('hidden');
+                        document.getElementById('login-form').classList.remove('hidden');
+                    }
+                });
+            } catch(e) { console.error(e); document.getElementById('config-form').classList.remove('hidden'); }
+        }
+
+        window.handleLogin = async () => {
+            try { await auth.signInWithEmailAndPassword(document.getElementById('email').value, document.getElementById('password').value); }
+            catch(e) { document.getElementById('auth-error').textContent = e.message; document.getElementById('auth-error').classList.remove('hidden'); }
+        };
+        window.handleRegister = async () => {
+            try {
+                const cred = await auth.createUserWithEmailAndPassword(document.getElementById('email').value, document.getElementById('password').value);
+                const batch = db.batch();
+                DEFAULT_CATEGORIES.forEach(c => batch.set(db.collection(`users/${cred.user.uid}/categories`).doc(c.id), c));
+                await batch.commit();
+            } catch(e) { document.getElementById('auth-error').textContent = e.message; document.getElementById('auth-error').classList.remove('hidden'); }
+        };
+        window.handleLogout = () => auth.signOut();
+
+
+        // --- DATA LOADING ---
+        async function loadData() {
+            const [cSnap, tSnap, rSnap] = await Promise.all([
+                db.collection(`users/${user.uid}/categories`).get(),
+                db.collection(`users/${user.uid}/transactions`).get(),
+                db.collection(`users/${user.uid}/rules`).get()
+            ]);
+            categories = cSnap.empty ? DEFAULT_CATEGORIES : cSnap.docs.map(d => d.data());
+            transactions = tSnap.docs.map(d => ({id: d.id, ...d.data()}));
+            rules = rSnap.docs.map(d => d.data());
+            updateDashboard();
+        }
+
+        // --- HELPERS ---
+        function getTxMonth(t) {
+            // Robustly extracts YYYY-MM
+            if(!t.date) return null;
+            
+            // Handle "YYYY-MM-DD"
+            if (t.date.match(/^\d{4}-\d{2}-\d{2}$/)) return t.date.substring(0, 7);
+            
+            // Handle "MM/DD/YYYY" or "M/D/YYYY"
+            const parts = t.date.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+            if (parts) {
+                const y = parts[3];
+                const m = parts[1].padStart(2, '0');
+                return `${y}-${m}`;
+            }
+            
+            return null;
+        }
+
+        function formatMoney(n) { return new Intl.NumberFormat('en-US', {style:'currency', currency:'USD'}).format(n); }
+        
+        function parseDate(raw) {
+            // Fix MM/DD/YYYY -> YYYY-MM-DD for storage
+            const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+            if(m) {
+                let y = m[3]; if(y.length===2) y='20'+y;
+                return `${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+            }
+            const d = new Date(raw);
+            return isNaN(d) ? null : d.toISOString().split('T')[0];
+        }
+
+        // --- DASHBOARD UPDATE ---
+        window.updateDashboard = () => {
+            const monthFilter = document.getElementById('header-month-selector').value;
+            const term = document.getElementById('search-input').value.toLowerCase();
+
+            const filtered = transactions.filter(t => {
+                const m = getTxMonth(t);
+                const matchMonth = monthFilter === 'all' || m === monthFilter;
+                const matchSearch = !term || t.description.toLowerCase().includes(term) || t.category.toLowerCase().includes(term) || t.amount.toString().includes(term);
+                return matchMonth && matchSearch;
+            });
+
+            // Update Selector
+            const selector = document.getElementById('header-month-selector');
+            // Get unique YYYY-MM months using strict helper
+            const validMonths = [...new Set(transactions.map(getTxMonth).filter(Boolean))].sort().reverse();
+            const savedVal = selector.value;
+            
+            if(selector.options.length !== validMonths.length + 1) {
+                selector.innerHTML = `<option value="all">All Time</option>` + validMonths.map(m => {
+                    // Make pretty date
+                    try {
+                        const d = new Date(m + '-01');
+                        const pretty = d.toLocaleString('default', { month: 'short', year: 'numeric' });
+                        return `<option value="${m}">${pretty}</option>`;
+                    } catch {
+                        return `<option value="${m}">${m}</option>`;
+                    }
+                }).join('');
+                selector.value = validMonths.includes(savedVal) || savedVal === 'all' ? savedVal : 'all';
+            }
+
+            // Calculate Multiplier
+            // If "All Time" selected, multiplier is the number of distinct months in the filtered set
+            // If specific month selected, multiplier is 1
+            const activeMonthsCount = new Set(filtered.map(getTxMonth).filter(Boolean)).size;
+            const multiplier = monthFilter === 'all' ? (activeMonthsCount || 1) : 1;
+
+            // Update Visuals
+            updateSummary(filtered);
+            updateCharts(filtered, multiplier);
+            updateBudgetTable(filtered, multiplier);
+            updateHistoryTable(filtered);
+        };
+
+        function updateSummary(txs) {
+            const inc = txs.filter(t => t.type === 'income').reduce((s,t)=>s+t.amount,0);
+            const exp = txs.filter(t => t.type === 'expense').reduce((s,t)=>s+t.amount,0);
+            document.getElementById('summary-income').textContent = formatMoney(inc);
+            document.getElementById('summary-expense').textContent = formatMoney(exp);
+            document.getElementById('summary-net').textContent = formatMoney(inc-exp);
+            document.getElementById('summary-net').className = `text-2xl font-bold ${inc-exp >= 0 ? 'text-green-600':'text-red-600'}`;
+        }
+
+        function updateCharts(txs, multiplier) {
+            const groups = ['Necessary Spending', 'Giving', 'Additional Spending', 'Other Expenses'];
+            const actuals = groups.map(g => txs.filter(t => (categories.find(c=>c.name===t.category)?.group || 'Other Expenses') === g && t.type === 'expense').reduce((s,t)=>s+t.amount,0));
+            const budgets = groups.map(g => categories.filter(c => c.group === g).reduce((s,c)=>s+(c.budget||0),0) * multiplier);
+
+            if(charts.bar) charts.bar.destroy();
+            charts.bar = new Chart(document.getElementById('budgetChart'), {
+                type: 'bar',
+                data: {
+                    labels: groups,
+                    datasets: [
+                        { label: 'Spent', data: actuals, backgroundColor: '#ef4444' },
+                        { label: 'Budget', data: budgets, backgroundColor: '#3b82f6' }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            // Doughnut
+            const expTxs = txs.filter(t => t.type === 'expense');
+            const catSum = {};
+            expTxs.forEach(t => catSum[t.category] = (catSum[t.category]||0) + t.amount);
+            const sorted = Object.entries(catSum).sort((a,b)=>b[1]-a[1]).slice(0,8);
+            
+            if(charts.doughnut) charts.doughnut.destroy();
+            charts.doughnut = new Chart(document.getElementById('spendingChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: sorted.map(x=>x[0]),
+                    datasets: [{ data: sorted.map(x=>x[1]), backgroundColor: ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#ec4899'] }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: {position: 'right'} } }
+            });
+        }
+
+        function updateBudgetTable(txs, multiplier) {
+            const tbody = document.getElementById('budget-table-body');
+            const label = document.getElementById('budget-multiplier-label');
+            const monthFilter = document.getElementById('header-month-selector').value;
+            
+            if(monthFilter === 'all') {
+                 label.textContent = `All Time (${multiplier} months)`;
+            } else {
+                 label.textContent = `Monthly Limit`;
+            }
+
+            const spendMap = {};
+            txs.forEach(t => spendMap[t.category] = (spendMap[t.category]||0) + t.amount);
+
+            const groups = ['Necessary Spending', 'Giving', 'Additional Spending', 'Other Expenses'];
+            let html = '';
+            
+            groups.forEach(g => {
+                const groupCats = categories.filter(c => (c.group || 'Other Expenses') === g && c.type === 'expense').sort((a,b) => (a.sort||99)-(b.sort||99));
+                if(groupCats.length) {
+                    html += `<tr class="bg-gray-100 text-xs font-bold uppercase"><td colspan="4" class="px-4 py-2">${g}</td></tr>`;
+                    groupCats.forEach(c => {
+                        const s = spendMap[c.name] || 0;
+                        const b = (c.budget || 0) * multiplier;
+                        const l = b - s;
+                        const color = l < 0 ? 'text-red-600 font-bold' : 'text-green-600';
+                        html += `<tr class="border-b"><td class="px-4 py-2">${c.name}</td><td class="px-4 py-2 text-right text-gray-400">${formatMoney(b)}</td><td class="px-4 py-2 text-right">${formatMoney(s)}</td><td class="px-4 py-2 text-right ${color}">${formatMoney(l)}</td></tr>`;
+                    });
+                }
+            });
+            tbody.innerHTML = html;
+        }
+
+        function updateHistoryTable(txs) {
+            const tbody = document.getElementById('history-table-body');
+            tbody.innerHTML = txs.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t => `
+                <tr class="border-b hover:bg-gray-50 ${t.category.includes('Uncategorized')?'uncategorized-row':''}">
+                    <td class="px-4 py-2 text-xs text-gray-500">${t.date}</td>
+                    <td class="px-4 py-2 font-medium">${t.description}</td>
+                    <td class="px-4 py-2 text-xs ${t.category.includes('Uncategorized')?'uncategorized-tag':'bg-gray-100'} rounded inline-block mt-1">${t.category}</td>
+                    <td class="px-4 py-2 text-right font-bold ${t.type==='income'?'text-green-600':'text-red-600'}">${formatMoney(t.amount)}</td>
+                    <td class="px-4 py-2 text-right"><button onclick="deleteTx('${t.id}')" class="text-red-400 hover:text-red-600">&times;</button></td>
+                </tr>
+            `).join('');
+        }
+
+        window.deleteTx = async (id) => {
+            if(confirm("Delete?")) { await db.collection(`users/${user.uid}/transactions`).doc(id).delete(); loadData(); }
+        };
+
+        // CSV Upload
+        document.getElementById('csv-input').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if(!file) return;
+            const text = await file.text();
+            const rows = text.split('\n').slice(1);
+            const batch = db.batch();
+            let count = 0;
+
+            const uncInc = categories.find(c=>c.name==='Uncategorized Income') || DEFAULT_CATEGORIES[0];
+            const uncExp = categories.find(c=>c.name==='Uncategorized Expense') || DEFAULT_CATEGORIES[1];
+
+            rows.forEach(row => {
+                const cols = row.split(',');
+                if(cols.length < 4) return;
+                const date = parseDate(cols[0].trim());
+                const amt = parseFloat(cols[1].trim());
+                const typeRaw = cols[2].trim().toLowerCase();
+                const desc = cols[3].trim().replace(/^"|"$/g, '');
+                
+                if(!date || isNaN(amt)) return;
+
+                let type = (typeRaw.includes('credit') || typeRaw.includes('inc')) ? 'income' : 'expense';
+                let cat = type === 'income' ? uncInc.name : uncExp.name;
+                
+                const rule = rules.find(r => desc.toUpperCase().includes(r.keyword.toUpperCase()));
+                if(rule) cat = rule.categoryName;
+
+                if(transactions.some(t => t.date===date && Math.abs(t.amount-amt)<0.01 && t.description===desc)) return;
+
+                const ref = db.collection(`users/${user.uid}/transactions`).doc();
+                batch.set(ref, { date, amount: amt, type, category: cat, description: desc });
+                count++;
+            });
+
+            await batch.commit();
+            alert(`Uploaded ${count} transactions.`);
+            e.target.value = '';
+            loadData();
+        });
+
+        // Data Management
+        window.downloadBackup = () => {
+            const blob = new Blob([JSON.stringify({categories, transactions, rules})], {type:'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `budget_backup.json`;
+            a.click();
+        };
+        window.restoreBackup = async (e) => {
+            const file = e.target.files[0];
+            if(!file || !confirm("Restore will merge data. Continue?")) return;
+            const data = JSON.parse(await file.text());
+            const batch = db.batch();
+            data.categories.forEach(c => batch.set(db.collection(`users/${user.uid}/categories`).doc(c.id), c));
+            data.transactions.forEach(t => batch.set(db.collection(`users/${user.uid}/transactions`).doc(t.id), t));
+            data.rules.forEach(r => batch.set(db.collection(`users/${user.uid}/rules`).doc(r.id || crypto.randomUUID()), r));
+            await batch.commit();
+            alert("Restored.");
+            loadData();
+        };
+        
+        window.exportPortableReport = window.downloadBackup; // Reuse for simplicity
+    </script>
+</body>
+</html>
