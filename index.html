@@ -349,7 +349,7 @@
             { id: 'giv-6', name: 'Cheryl Recurring Donation', type: 'expense', group: 'Giving', budget: 51.50, sort: 35 },
             { id: 'giv-7', name: 'Joy FM', type: 'expense', group: 'Giving', budget: 40.00, sort: 36 },
             { id: 'giv-8', name: 'Hostetter Ministries', type: 'expense', group: 'Giving', budget: 80.00, sort: 37 },
-            { id: 'giv-9', name: 'Micellaneous Giving', type: 'expense', group: 'Giving', budget: 0.00, sort: 38 },
+            { id: 'giv-9', name: 'Miscellaneous Giving', type: 'expense', group: 'Giving', budget: 0.00, sort: 38 },
             { id: 'giv-10', name: 'Transfer to Giving Savings', type: 'expense', group: 'Giving', budget: 40.00, sort: 39 },
             
             // Additional Spending (Sort 50-61)
@@ -474,7 +474,10 @@
             const groups = ['Necessary Spending', 'Giving', 'Additional Spending', 'Other Expenses'];
             const actualData = groups.map(g => txs.filter(t => getCatGroup(t.category) === g && t.type === 'expense').reduce((sum, t) => sum + t.amount, 0));
             
-            const multiplier = document.getElementById('month-selector').value === 'all' ? (new Set(txs.map(t => t.date.substring(0,7))).size || 1) : 1;
+            // FIX: Calculate multiplier based on unique months in filtered Txs
+            const multiplier = document.getElementById('month-selector').value === 'all' 
+                ? (new Set(txs.map(t => t.date.substring(0,7))).size || 1) 
+                : 1;
             
             const budgetData = groups.map(g => {
                 return categories.filter(c => c.group === g).reduce((sum, c) => sum + (c.budget || 0), 0) * multiplier;
@@ -505,7 +508,10 @@
 
         function updateBudgetTable(txs) {
             const tbody = document.getElementById('budget-table-body');
-            const multiplier = document.getElementById('month-selector').value === 'all' ? (new Set(txs.map(t => t.date.substring(0,7))).size || 1) : 1;
+            // FIX: Calculate multiplier based on unique months in filtered Txs
+            const multiplier = document.getElementById('month-selector').value === 'all' 
+                ? (new Set(txs.map(t => t.date.substring(0,7))).size || 1) 
+                : 1;
             
             // Aggregate spending
             const spendMap = {};
