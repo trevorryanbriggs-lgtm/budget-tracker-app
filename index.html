@@ -97,7 +97,7 @@
                             <input type="file" id="csv-input" accept=".csv" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/>
                             <i data-lucide="file-spreadsheet" class="w-8 h-8 text-indigo-400 mx-auto mb-2"></i>
                             <p class="text-xs font-bold text-indigo-600">Upload Transactions</p>
-                            <p class="text-[10px] text-slate-400">Smart Import: Bank or Simple CSV</p>
+                            <p class="text-[10px] text-slate-400">Required: Date, Amount, Type, Desc</p>
                         </div>
                         <div class="p-3 border border-slate-100 rounded-xl flex justify-between items-center bg-slate-50/50">
                             <div class="text-xs"><p class="font-bold text-slate-700">Rules CSV</p></div>
@@ -243,94 +243,59 @@
             await batch.commit();
         }
 
-        // --- IMPROVED CSV PARSER ---
-        // 1. Parses line-by-line manually to handle quotes/commas better
-        // 2. Detects columns flexibly
-        // 3. Handles empty columns properly
-        function parseCSVLine(line) {
-            const result = [];
-            let current = '';
-            let inQuote = false;
-            for (let i = 0; i < line.length; i++) {
-                const char = line[i];
-                if (char === '"') { 
-                    if (inQuote && line[i+1] === '"') { current += '"'; i++; } // Escaped quote
-                    else { inQuote = !inQuote; } // Toggle quote
-                } else if (char === ',' && !inQuote) { 
-                    result.push(current.trim()); current = ''; 
-                } else { 
-                    current += char; 
-                }
-            }
-            result.push(current.trim());
-            return result;
-        }
-
-        const smartParseCSV = (text) => {
+        // --- SIMPLE 4-COLUMN CSV PARSER ---
+        const parseSimpleCSV = (text) => {
             const lines = text.split('\n').filter(l => l.trim());
             if(lines.length < 2) return null;
+
+            // Headers: date, amount, type, description (case-insensitive)
+            const headers = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/["']/g, ''));
             
-            // Normalize Headers
-            const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/["']/g, ''));
-            
-            // Column Detection Logic
             const idx = {
-                // Core
-                date: headers.findIndex(h => h.includes('date') && !h.includes('post')), 
-                desc: headers.findIndex(h => h.includes('description') || h.includes('memo') || h.includes('payee')),
-                amt: headers.findIndex(h => h === 'amount' || h.includes('amount')),
-                
-                // Indicators
-                type: headers.findIndex(h => h.includes('type') || h.includes('indicator')),
-                debit: headers.findIndex(h => h.includes('debit')),
-                credit: headers.findIndex(h => h.includes('credit'))
+                date: headers.findIndex(h => h.includes('date')),
+                amt: headers.findIndex(h => h.includes('amount')),
+                type: headers.findIndex(h => h.includes('type') || h.includes('indicator') || h.includes('credit debit')),
+                desc: headers.findIndex(h => h.includes('desc') || h.includes('memo') || h.includes('payee'))
             };
-            
-            // Fallback Date logic
-            if(idx.date === -1) idx.date = headers.findIndex(h => h.includes('date'));
-            
-            if(idx.date === -1 || (idx.amt === -1 && idx.debit === -1)) return { error: "Missing Date or Amount column." };
+
+            if(idx.date === -1 || idx.amt === -1) return { error: "Missing Date or Amount columns." };
 
             const data = [];
+            // Simple regex for splitting CSV lines, respecting quotes
+            const regex = /(".*?"|[^",\s]+)(?=\s*,|\s*$)/g;
+
             for(let i=1; i<lines.length; i++) {
-                const cols = parseCSVLine(lines[i]);
-                // Must have enough columns (rough check)
-                if(cols.length < 2) continue; 
+                // If simple split fails, try regex match
+                let cols = lines[i].split(',');
+                // If quotes are present, do a better split
+                if (lines[i].includes('"')) {
+                     const matches = lines[i].match(regex);
+                     if (matches) cols = matches;
+                }
 
-                let dateStr = cols[idx.date];
-                let desc = cols[idx.desc] || "No Description";
-                let amount = 0;
-                let type = 'expense';
+                if(cols.length < 2) continue;
+                const clean = (val) => val ? val.replace(/^"|"$/g, '').trim() : '';
 
-                // Logic to determine Amount & Type
-                if(idx.debit > -1 && idx.credit > -1) {
-                    // If Debit/Credit columns exist
-                    const dVal = parseFloat((cols[idx.debit]||"0").replace(/[$,]/g,''));
-                    const cVal = parseFloat((cols[idx.credit]||"0").replace(/[$,]/g,''));
-                    if(cVal > 0) { amount = cVal; type = 'income'; } 
-                    else { amount = dVal; type = 'expense'; }
-                } else if(idx.amt > -1) {
-                    // Single Amount Column
-                    let rawAmt = (cols[idx.amt]||"0").replace(/[$,]/g,'');
-                    amount = parseFloat(rawAmt);
-                    
-                    if(idx.type > -1) {
-                        // Use Type/Indicator Column
-                        const tVal = (cols[idx.type]||"").toLowerCase();
-                        if(tVal.includes('credit') || tVal.includes('dep') || tVal.includes('inc')) type = 'income';
-                        else type = 'expense';
-                        amount = Math.abs(amount);
-                    } else {
-                        // Infer by sign
-                        if(amount < 0) { type = 'expense'; amount = Math.abs(amount); }
-                        else type = 'expense'; // Default assumption
-                    }
+                const dateStr = clean(cols[idx.date]);
+                const amountStr = clean(cols[idx.amt]).replace(/[$,]/g, '');
+                const typeStr = idx.type > -1 ? clean(cols[idx.type]).toLowerCase() : '';
+                const desc = clean(cols[idx.desc]);
+
+                const amount = parseFloat(amountStr);
+                let type = 'expense'; // Default
+
+                if (typeStr) {
+                    if (typeStr.includes('credit') || typeStr.includes('inc')) type = 'income';
+                    else type = 'expense'; 
+                } else {
+                    // Infer from amount sign if type column missing
+                    if (amount < 0) { type = 'expense'; }
+                    // If positive and no type, default to expense unless proven otherwise
                 }
 
                 const dateObj = parseDateFlexible(dateStr);
-                // Only add valid rows
-                if(dateObj && !isNaN(amount)) {
-                    data.push({ date: dateObj, amount, type, description: desc });
+                if (dateObj && !isNaN(amount)) {
+                    data.push({ date: dateObj, amount: Math.abs(amount), type, description: desc });
                 }
             }
             return { data };
@@ -339,15 +304,15 @@
         // --- HELPERS ---
         function parseDateFlexible(raw) {
             if(!raw) return null;
-            // 1. YYYY-MM-DD
-            if(raw.match(/^\d{4}-\d{2}-\d{2}$/)) return raw;
-            // 2. MM/DD/YYYY or M/D/YY
+            // Check MM/DD/YYYY
             const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
             if(m) {
                 let y = m[3]; if(y.length===2) y='20'+y;
                 return `${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
             }
-            // 3. Fallback Date()
+            // Check YYYY-MM-DD
+            if(raw.match(/^\d{4}-\d{2}-\d{2}$/)) return raw;
+            
             const d = new Date(raw);
             return isNaN(d) ? null : d.toISOString().split('T')[0];
         }
@@ -357,7 +322,6 @@
         function getUniqueMonthsCount(txs) { return new Set(txs.map(getTxMonth).filter(m => m !== null)).size || 1; }
         function formatMoney(n) { return new Intl.NumberFormat('en-US', {style:'currency', currency:'USD'}).format(n); }
         function getCatGroup(catName) { return categories.find(x => x.name === catName)?.group || 'Other Expenses'; }
-        
         const showFeedback = (msg, err=false) => {
             const c = document.getElementById('feedback-container');
             c.innerHTML = `<div class="p-4 rounded-lg shadow-xl font-medium max-w-sm ${err?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}">${msg}</div>`;
@@ -367,27 +331,24 @@
 
         // --- DASHBOARD UPDATE ---
         window.updateDashboard = () => {
-            const monthFilter = document.getElementById('month-selector').value;
-            const term = document.getElementById('search-input').value.toLowerCase();
-            
-            // Smart Default Selection on first load
+            const selector = document.getElementById('month-selector');
+            // Smart Default
             const allMonths = [...new Set(transactions.map(getTxMonth).filter(Boolean))].sort().reverse();
-            if(currentMonthFilter === 'all' && document.getElementById('month-selector').options.length <= 1 && allMonths.length > 0) {
+            if(currentMonthFilter === 'all' && selector.options.length <= 1 && allMonths.length > 0) {
                 const now = new Date().toISOString().substring(0, 7);
                 currentMonthFilter = allMonths.includes(now) ? now : allMonths[0];
             } else {
-                currentMonthFilter = monthFilter;
+                currentMonthFilter = selector.value;
             }
 
+            const term = document.getElementById('search-input').value.toLowerCase();
             const filtered = transactions.filter(t => {
                 const m = getTxMonth(t);
                 const matchMonth = currentMonthFilter === 'all' || m === currentMonthFilter;
-                const matchSearch = !term || t.description.toLowerCase().includes(term) || t.category.toLowerCase().includes(term) || (t.note && t.note.toLowerCase().includes(term));
+                const matchSearch = !term || t.description.toLowerCase().includes(term) || t.category.toLowerCase().includes(term);
                 return matchMonth && matchSearch;
             });
 
-            // Refresh Selector
-            const selector = document.getElementById('month-selector');
             if(selector.options.length !== allMonths.length + 1) {
                 selector.innerHTML = `<option value="all">All Time</option>` + allMonths.map(m => {
                     const d = new Date(m+'-01T00:00:00');
@@ -396,12 +357,10 @@
                 }).join('');
                 selector.value = currentMonthFilter;
             }
-
-            // Show/Hide Clear Button
             const clearBtn = document.getElementById('clear-all-btn');
             if(transactions.length > 0) clearBtn.classList.remove('hidden'); else clearBtn.classList.add('hidden');
 
-            const multiplier = currentMonthFilter === 'all' ? (getUniqueMonthsCount(filtered)||1) : 1;
+            const multiplier = currentMonthFilter === 'all' ? (getUniqueMonthsCount(filtered) || 1) : 1;
 
             updateSummary(filtered);
             updateCharts(filtered, multiplier);
@@ -411,7 +370,14 @@
             renderCatManager();
             lucide.createIcons();
         };
+        
+        // Manual hook for month change
+        document.getElementById('month-selector').addEventListener('change', (e) => {
+             currentMonthFilter = e.target.value;
+             window.updateDashboard();
+        });
 
+        // Render Fns (Standard)
         function updateSummary(txs) {
             const inc = txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
             const exp = txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
@@ -421,7 +387,7 @@
             document.getElementById('summary-net').textContent = formatMoney(net);
             document.getElementById('summary-net').className = `text-2xl font-bold ${net >= 0 ? 'text-emerald-600':'text-rose-600'}`;
         }
-
+        
         function updateCharts(txs, multiplier) {
             const groups = ['Necessary Spending', 'Giving', 'Additional Spending', 'Other Expenses'];
             const actuals = groups.map(g => txs.filter(t => getCatGroup(t.category) === g && t.type === 'expense').reduce((s,t)=>s+t.amount,0));
@@ -502,7 +468,7 @@
              container.innerHTML = html;
         }
 
-        // --- ACTIONS ---
+        // Actions
         window.toggleEdit = (id) => { editingId = (editingId === id ? null : id); updateDashboard(); };
         window.cancelEdit = () => { editingId = null; updateDashboard(); };
         window.saveEdit = async (id) => {
@@ -516,6 +482,7 @@
         window.deleteTx = async (id) => { if(confirm("Delete?")) { await db.collection(`users/${user.uid}/transactions`).doc(id).delete(); await fetchTransactions(); updateDashboard(); } };
         window.clearAllTransactions = async () => {
              if (!confirm("DELETE ALL transactions? This cannot be undone.")) return;
+             transactions = []; updateDashboard(); 
              const b = db.batch();
              const s = await db.collection(`users/${user.uid}/transactions`).limit(400).get();
              s.forEach(d => b.delete(d.ref));
@@ -540,7 +507,8 @@
             const file = e.target.files[0];
             if(!file) return;
             const text = await file.text();
-            const parsed = smartParseCSV(text);
+            const parsed = parseSimpleCSV(text);
+            
             if(!parsed || parsed.error) { alert("CSV Error: " + (parsed?.error || "Check headers")); return; }
 
             const batch = db.batch();
