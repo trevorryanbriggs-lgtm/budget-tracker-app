@@ -4,11 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Cloud Budget Tracker</title>
+    
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- FIREBASE -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -93,7 +97,7 @@
                     <!-- History -->
                     <div class="bg-white rounded-xl card-shadow overflow-hidden">
                         <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center gap-2">
-                            <div class="flex items-center gap-2"><span class="font-bold text-sm text-gray-700">Transactions</span><button id="clear-all-btn" onclick="window.clearAllTransactions()" class="hidden text-[10px] font-bold text-white bg-red-500 hover:bg-red-600 px-2 py-1 rounded transition shadow-sm whitespace-nowrap">Clear All</button></div>
+                            <div class="flex items-center gap-2"><span class="font-bold text-sm text-gray-700">Transactions</span></div>
                             <input type="text" id="search-input" placeholder="Search..." class="text-xs p-1 border rounded w-32" oninput="window.updateDashboard()">
                         </div>
                         <div class="overflow-x-auto max-h-96"><table class="w-full text-sm text-left text-gray-500"><thead class="text-xs text-gray-700 uppercase bg-gray-50"><tr><th class="px-4 py-3">Date</th><th class="px-4 py-3">Desc</th><th class="px-4 py-3">Cat</th><th class="px-4 py-3 text-right">Amt</th><th class="px-4 py-3"></th></tr></thead><tbody id="history-table-body"></tbody></table></div>
@@ -104,17 +108,18 @@
                     <!-- Uploads -->
                     <div class="bg-white p-4 rounded-xl card-shadow space-y-4">
                         <h3 class="font-bold text-gray-700 text-sm border-b pb-2">Uploads</h3>
-                        <div class="space-y-2"><label class="text-xs font-bold text-gray-500">Transactions CSV</label><input type="file" id="csv-input" accept=".csv" class="block w-full text-xs"/><p class="text-[10px] text-gray-400">Imports ALL rows (no duplicate check).</p></div>
-                        <div class="space-y-2"><label class="text-xs font-bold text-gray-500">Rules CSV</label><input type="file" id="rules-input" accept=".csv" class="block w-full text-xs"/><p class="text-[10px] text-gray-400">Auto-updates existing transactions on upload.</p></div>
+                        <div class="space-y-2"><label class="text-xs font-bold text-gray-500">Transactions CSV</label><input type="file" id="csv-input" accept=".csv" class="block w-full text-xs"/><p class="text-[10px] text-gray-400">Auto-detects format.</p></div>
+                        <div class="space-y-2"><label class="text-xs font-bold text-gray-500">Rules CSV</label><input type="file" id="rules-input" accept=".csv" class="block w-full text-xs"/><p class="text-[10px] text-gray-400">Req: keyword, category</p></div>
                     </div>
                     
                     <!-- Data Management -->
                     <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-blue-500">
                          <h3 class="font-bold text-gray-700 text-sm mb-2">Data Management</h3>
                          <div class="grid grid-cols-2 gap-2">
-                             <button onclick="window.downloadBackup()" class="px-3 py-2 bg-blue-50 text-blue-700 rounded text-xs font-bold hover:bg-blue-100">Backup</button>
-                             <button onclick="document.getElementById('restore-input').click()" class="bg-green-50 text-green-700 text-xs font-bold hover:bg-green-100 text-center">Restore<input type="file" id="restore-input" class="hidden" accept=".json" onchange="window.restoreBackup(event)"></button>
-                             <button onclick="window.clearAllRules()" class="col-span-2 bg-purple-50 text-purple-700 text-xs font-bold py-2 rounded hover:bg-purple-100 border border-purple-200 mt-1">Clear All Rules</button>
+                             <button onclick="window.downloadBackup()" class="col-span-1 bg-blue-50 text-blue-700 text-xs font-bold py-2 rounded hover:bg-blue-100">Backup JSON</button>
+                             <label class="col-span-1 cursor-pointer bg-green-50 text-green-700 text-xs font-bold py-2 rounded hover:bg-green-100 text-center">Restore<input type="file" id="restore-input" class="hidden" accept=".json" onchange="window.restoreBackup(event)"></label>
+                             <button onclick="window.clearAllTransactions()" class="col-span-1 bg-red-50 text-red-700 text-xs font-bold py-2 rounded hover:bg-red-100 border border-red-200">Clear Trans</button>
+                             <button onclick="window.clearAllRules()" class="col-span-1 bg-purple-50 text-purple-700 text-xs font-bold py-2 rounded hover:bg-purple-100 border border-purple-200">Clear Rules</button>
                          </div>
                     </div>
 
@@ -127,6 +132,9 @@
     </div>
 
     <script>
+        // --- INIT ICONS ---
+        lucide.createIcons();
+
         // --- FIREBASE CONFIG (PASTE HERE) ---
         const firebaseConfig = {
   apiKey: "AIzaSyCvMCXuKODkxL2Ni9axSNb4LN7GgtDfazM",
@@ -188,7 +196,7 @@
             { id: 'inc-2', name: 'Salary (Trevor)', type: 'income', group: 'Income', budget: 0, sort: 3 },
         ];
 
-        // --- INIT ---
+        // --- INIT & AUTH ---
         const storedConfig = localStorage.getItem('app_firebase_config');
         if(firebaseConfig.apiKey.includes('PASTE')) {
             if(storedConfig) initFirebase(JSON.parse(storedConfig));
@@ -252,71 +260,140 @@
             await batch.commit();
         }
 
-        // --- LOGIC ---
+        // --- SMART CSV PARSER ---
+        const smartParseCSV = (text) => {
+            const lines = text.split('\n').filter(l => l.trim());
+            if(lines.length < 2) return null;
+            
+            const headers = lines[0].split(',').map(h => h.toLowerCase().trim().replace(/["']/g, ''));
+            const idx = {
+                date: headers.findIndex(h => h.includes('date') && !h.includes('post')),
+                desc: headers.findIndex(h => h.includes('description') || h.includes('memo') || h.includes('payee')),
+                amt: headers.findIndex(h => h.includes('amount') || h === 'amt'),
+                type: headers.findIndex(h => h.includes('type') || h.includes('indicator') || h.includes('credit debit')),
+                debit: headers.findIndex(h => h.includes('debit')),
+                credit: headers.findIndex(h => h.includes('credit'))
+            };
+            
+            if (idx.date === -1) idx.date = headers.findIndex(h => h.includes('date'));
+            if(idx.date === -1 || (idx.amt === -1 && idx.debit === -1)) return { error: "Could not detect Date or Amount columns." };
+
+            const data = [];
+            for(let i=1; i<lines.length; i++) {
+                const row = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || []; 
+                const cols = row.length < headers.length ? lines[i].split(',') : row;
+                const clean = (val) => val ? val.replace(/^"|"$/g, '').trim() : '';
+
+                let dateStr = clean(cols[idx.date]);
+                let desc = clean(cols[idx.desc]);
+                let amount = 0;
+                let type = 'expense';
+
+                if(idx.debit > -1 && idx.credit > -1) {
+                    const debitVal = parseFloat(clean(cols[idx.debit]) || 0);
+                    const creditVal = parseFloat(clean(cols[idx.credit]) || 0);
+                    if(creditVal > 0) { amount = creditVal; type = 'income'; }
+                    else { amount = debitVal; type = 'expense'; }
+                } else if (idx.amt > -1) {
+                    let rawAmt = clean(cols[idx.amt]).replace(/[$,]/g, '');
+                    amount = parseFloat(rawAmt);
+                    if (idx.type > -1) {
+                        const tVal = clean(cols[idx.type]).toLowerCase();
+                        type = (tVal.includes('credit') || tVal.includes('dep') || tVal.includes('inc')) ? 'income' : 'expense';
+                        amount = Math.abs(amount);
+                    } else {
+                        if (amount < 0) { type = 'expense'; amount = Math.abs(amount); }
+                        else { type = 'expense'; } 
+                    }
+                }
+
+                const dateObj = parseDateFlexible(dateStr);
+                if(dateObj && !isNaN(amount)) {
+                    data.push({ date: dateObj, amount, type, description: desc });
+                }
+            }
+            return { data };
+        };
+
+        // --- HELPERS ---
+        function parseDateFlexible(raw) {
+            if(!raw) return null;
+            const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/); // MM/DD/YYYY
+            if(m) {
+                let y = m[3]; if(y.length===2) y='20'+y;
+                return `${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+            }
+            // YYYY-MM-DD check
+            if(raw.match(/^\d{4}-\d{2}-\d{2}$/)) return raw;
+
+            const d = new Date(raw);
+            return isNaN(d) ? null : d.toISOString().split('T')[0];
+        }
+
         function getTxMonth(t) {
             if (!t.date) return null;
-            if (t.date.match(/^\d{4}-\d{2}-\d{2}$/)) return t.date.substring(0, 7);
-            const m = t.date.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-            if(m) return `${m[3]}-${m[1].padStart(2,'0')}`;
-            const d = new Date(t.date);
-            if(!isNaN(d)) return d.toISOString().substring(0, 7);
-            return null;
+            // Since we standardize on YYYY-MM-DD, this is safe
+            return t.date.substring(0, 7);
         }
+
         function getUniqueMonthsCount(txs) { return new Set(txs.map(getTxMonth).filter(m => m !== null)).size || 1; }
         function formatMoney(n) { return new Intl.NumberFormat('en-US', {style:'currency', currency:'USD'}).format(n); }
         function getCatGroup(catName) { return categories.find(x => x.name === catName)?.group || 'Other Expenses'; }
-        function parseDateFlexible(raw) {
-             if(!raw) return null;
-             const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-             if(m) {
-                 let y = m[3]; if(y.length===2) y='20'+y;
-                 return `${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
-             }
-             const d = new Date(raw);
-             return isNaN(d) ? null : d.toISOString().split('T')[0];
-        }
+        function formatDateDisplay(d) { if(!d) return ''; const p=d.split('-'); return `${p[1]}/${p[2]}/${p[0]}`; } // Simple reverse for display
 
+        // --- DASHBOARD UPDATE ---
         window.updateDashboard = () => {
-            const sel = document.getElementById('month-selector');
+            const monthFilter = document.getElementById('month-selector').value;
             const term = document.getElementById('search-input').value.toLowerCase();
             
-            // Smart Default Month Selection
+            // Try to set default to current month if loaded and nothing selected
             const allMonths = [...new Set(transactions.map(getTxMonth).filter(Boolean))].sort().reverse();
-            const currentMonth = new Date().toISOString().substring(0, 7);
+            const selector = document.getElementById('month-selector');
             
-            // If select is 'all' (default) and we haven't manually set it, try to set to current
-            if (sel.options.length === 1 && allMonths.length > 0) {
-                sel.innerHTML = `<option value="all">All Time</option>` + allMonths.map(m => `<option value="${m}">${m}</option>`).join('');
-                if (allMonths.includes(currentMonth)) {
-                    sel.value = currentMonth; // Auto-select current month if available
-                } else if (allMonths.length > 0) {
-                    sel.value = allMonths[0]; // Or select most recent
-                }
-            } else if (sel.options.length !== allMonths.length + 1) {
-                 // Rebuild only if new months appeared
-                 const val = sel.value;
-                 sel.innerHTML = `<option value="all">All Time</option>` + allMonths.map(m => `<option value="${m}">${m}</option>`).join('');
-                 sel.value = val;
+            if (selector.value === 'all' && selector.options.length === 1 && allMonths.length > 0) {
+                 const current = new Date().toISOString().substring(0, 7);
+                 if(allMonths.includes(current)) monthFilter === current; // Logic happens in redraw
             }
-
-            const filterMonth = sel.value;
 
             const filtered = transactions.filter(t => {
                 const m = getTxMonth(t);
-                const matchMonth = filterMonth === 'all' || m === filterMonth;
-                const matchSearch = !term || t.description.toLowerCase().includes(term) || t.category.toLowerCase().includes(term) || t.amount.toString().includes(term);
+                const matchMonth = monthFilter === 'all' || m === monthFilter;
+                const matchSearch = !term || t.description.toLowerCase().includes(term) || t.category.toLowerCase().includes(term) || (t.note && t.note.toLowerCase().includes(term));
                 return matchMonth && matchSearch;
             });
 
-            const multiplier = filterMonth === 'all' ? (getUniqueMonthsCount(filtered) || 1) : 1;
+            // Refresh Selector
+            const savedVal = selector.value;
+            if(selector.options.length !== allMonths.length + 1) {
+                selector.innerHTML = `<option value="all">All Time</option>` + allMonths.map(m => {
+                    const d = new Date(m+'-01T00:00:00');
+                    const label = d.toLocaleString('default', {month:'short', year:'numeric'});
+                    return `<option value="${m}">${label}</option>`;
+                }).join('');
+                
+                // Auto-select current month if first load and available
+                const currentYm = new Date().toISOString().substring(0,7);
+                if(savedVal === 'all' && allMonths.includes(currentYm)) selector.value = currentYm;
+                else selector.value = savedVal;
+            }
+            
+            // Force re-filter if auto-selected
+            const finalFilter = selector.value;
+            const finalFiltered = transactions.filter(t => {
+                const m = getTxMonth(t);
+                const matchMonth = finalFilter === 'all' || m === finalFilter;
+                const matchSearch = !term || t.description.toLowerCase().includes(term) || t.category.toLowerCase().includes(term) || (t.note && t.note.toLowerCase().includes(term));
+                return matchMonth && matchSearch;
+            });
 
-            updateSummary(filtered);
-            updateCharts(filtered, multiplier);
-            updateBudgetTable(filtered, multiplier);
-            updateHistoryTable(filtered);
-            renderGroupBreakdown(filtered);
+            const multiplier = finalFilter === 'all' ? (getUniqueMonthsCount(finalFiltered) || 1) : 1;
+
+            updateSummary(finalFiltered);
+            updateCharts(finalFiltered, multiplier);
+            updateBudgetTable(finalFiltered, multiplier);
+            updateHistoryTable(finalFiltered);
+            renderGroupBreakdown(finalFiltered);
             renderCatManager();
-            renderRulesList(); // Ensure Rules list is rendered
         };
 
         function updateSummary(txs) {
@@ -337,8 +414,8 @@
             if(charts.bar) charts.bar.destroy();
             charts.bar = new Chart(document.getElementById('budgetChart'), {
                 type: 'bar',
-                data: { labels: groups, datasets: [{ label: 'Spent', data: actuals, backgroundColor: '#ef4444' }, { label: 'Budget', data: budgets, backgroundColor: '#3b82f6' }] },
-                options: { responsive: true, maintainAspectRatio: false }
+                data: { labels: groups, datasets: [{ label: 'Spent', data: actuals, backgroundColor: '#ef4444', borderRadius: 4 }, { label: 'Budget', data: budgets, backgroundColor: '#3b82f6', borderRadius: 4 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, grid: { borderDash: [2, 4] } }, x: { grid: { display: false } } } }
             });
 
             if(charts.doughnut) charts.doughnut.destroy();
@@ -348,7 +425,7 @@
             charts.doughnut = new Chart(document.getElementById('spendingChart'), {
                 type: 'doughnut',
                 data: { labels: sorted.map(x=>x[0]), datasets: [{ data: sorted.map(x=>x[1]), backgroundColor: ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#ec4899'] }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: {position: 'right'} } }
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: {position: 'right', labels: { usePointStyle: true, boxWidth: 8 } } }, cutout: '70%' }
             });
         }
 
@@ -362,41 +439,23 @@
             groups.forEach(g => {
                 const groupCats = categories.filter(c => (c.group || 'Other Expenses') === g && c.type === 'expense').sort((a,b) => (a.sort||99)-(b.sort||99));
                 if(groupCats.length) {
-                    html += `<tr class="bg-gray-100 text-xs font-bold uppercase"><td colspan="4" class="px-4 py-2">${g}</td></tr>`;
+                    html += `<tr class="bg-slate-100 text-xs font-bold uppercase tracking-wider text-slate-500"><td colspan="4" class="px-5 py-2">${g}</td></tr>`;
                     groupCats.forEach(c => {
                         const s = spendMap[c.name] || 0;
                         const b = (c.budget || 0) * multiplier;
                         const l = b - s;
                         const color = l < 0 ? 'text-red-600 font-bold' : 'text-green-600';
-                        html += `<tr class="border-b"><td class="px-4 py-2">${c.name}</td><td class="px-4 py-2 text-right text-gray-400">${formatMoney(b)}</td><td class="px-4 py-2 text-right">${formatMoney(s)}</td><td class="px-4 py-2 text-right ${color}">${formatMoney(l)}</td></tr>`;
+                        html += `<tr class="border-b hover:bg-gray-50">
+                            <td class="px-4 py-2">${c.name}</td>
+                            <td class="px-4 py-2 text-right text-gray-400">${formatMoney(b)}</td>
+                            <td class="px-4 py-2 text-right">${formatMoney(s)}</td>
+                            <td class="px-4 py-2 text-right ${color}">${formatMoney(l)}</td>
+                        </tr>`;
                     });
                 }
             });
             tbody.innerHTML = html;
         }
-        
-        const renderGroupBreakdown = (txs) => {
-             // This replicates the Area Summary logic but updates the DOM
-             const container = document.getElementById('group-breakdown-list');
-             // ... Reuse summary logic ...
-             const groups = ['Income', 'Necessary Spending', 'Giving', 'Additional Spending', 'Other Expenses'];
-             let html = '';
-             groups.forEach(g => {
-                 const total = txs.filter(t => {
-                     const cat = categories.find(c => c.name === t.category);
-                     const group = cat ? cat.group : (t.type==='income'?'Income':'Other Expenses');
-                     return group === g;
-                 }).reduce((sum, t) => sum + t.amount, 0);
-                 
-                 if (total > 0) {
-                     const color = g === 'Income' ? 'text-green-600' : 'text-red-600';
-                     const border = g === 'Income' ? 'border-green-500' : 'border-red-500';
-                     html += `<div class="flex justify-between items-center p-3 rounded border-l-4 ${border} bg-gray-50"><span class="font-bold">${g}</span><span class="${color} font-bold">${formatMoney(total)}</span></div>`;
-                 }
-             });
-             container.innerHTML = html || '<p class="text-center text-gray-400">No Data</p>';
-        }
-
 
         function updateHistoryTable(txs) {
             const tbody = document.getElementById('history-table-body');
@@ -416,8 +475,9 @@
                         </td>
                     </tr>`;
                 }
+                const displayDate = formatDateDisplay(t.date);
                 return `<tr class="border-b hover:bg-gray-50 cursor-pointer ${rowClass}" onclick="toggleEdit('${t.id}')">
-                    <td class="px-4 py-2 text-xs text-gray-500">${formatDateDisplay(t.date)}</td>
+                    <td class="px-4 py-2 text-xs text-gray-500">${displayDate}</td>
                     <td class="px-4 py-2 font-medium">${t.description}</td>
                     <td class="px-4 py-2 text-xs ${t.category.includes('Uncategorized')?'uncategorized-tag':'bg-gray-100'} rounded inline-block mt-1">${t.category}</td>
                     <td class="px-4 py-2 text-right font-bold ${t.type==='income'?'text-green-600':'text-red-600'}">${formatMoney(t.amount)}</td>
@@ -426,40 +486,62 @@
             }).join('');
         }
         
+        const renderGroupBreakdown = (txs) => {
+             const container = document.getElementById('group-breakdown-list');
+             const groups = ['Income', 'Necessary Spending', 'Giving', 'Additional Spending', 'Other Expenses'];
+             let html = '';
+             groups.forEach(g => {
+                 const total = txs.filter(t => {
+                     const cat = categories.find(c => c.name === t.category);
+                     const group = cat ? cat.group : (t.type==='income'?'Income':'Other Expenses');
+                     return group === g;
+                 }).reduce((sum, t) => sum + t.amount, 0);
+                 
+                 if (total > 0) {
+                     const color = g === 'Income' ? 'text-green-600' : 'text-red-600';
+                     const border = g === 'Income' ? 'border-green-500' : 'border-red-500';
+                     html += `<div class="flex justify-between items-center p-3 rounded border-l-4 ${border} bg-gray-50"><span class="font-bold">${g}</span><span class="${color} font-bold">${formatMoney(total)}</span></div>`;
+                 }
+             });
+             container.innerHTML = html || '<p class="text-center text-gray-400">No Data</p>';
+        }
+        
         const renderCatManager = () => {
              const container = document.getElementById('category-manager-container');
-             // Simplistic list for now
-             let html = `<h3 class="font-bold border-b mb-2">Categories & Rules</h3><div class="max-h-60 overflow-y-auto custom-scroll text-sm space-y-1">`;
+             // Use lucide icons
+             let html = `<h3 class="font-bold border-b mb-2 text-sm text-gray-700">Categories</h3><div class="max-h-60 overflow-y-auto custom-scroll text-xs space-y-1">`;
              categories.sort((a,b)=>a.name.localeCompare(b.name)).forEach(c => {
-                 html += `<div class="flex justify-between p-1 hover:bg-gray-50"><span>${c.name}</span><button onclick="delCat('${c.id}')" class="text-red-400">&times;</button></div>`;
+                 html += `<div class="flex justify-between p-1 hover:bg-gray-50 items-center"><span>${c.name}</span><button onclick="delCat('${c.id}')" class="text-red-400">&times;</button></div>`;
              });
              html += `</div>`;
              
-             // Render Rules Table
-             html += `<h3 class="font-bold border-b mt-4 mb-2">Active Rules</h3><div class="max-h-40 overflow-y-auto custom-scroll text-xs space-y-1">`;
+             html += `<h3 class="font-bold border-b mt-4 mb-2 text-sm text-gray-700">Active Rules</h3><div class="max-h-40 overflow-y-auto custom-scroll text-xs space-y-1">`;
              if(rules.length === 0) html += `<p class="text-gray-400">No rules yet.</p>`;
              else rules.forEach(r => {
-                 html += `<div class="flex justify-between p-1 bg-purple-50 rounded"><span>"${r.keyword}" &rarr; ${r.categoryName}</span><button onclick="delRule('${r.id}')" class="text-red-500">&times;</button></div>`;
+                 html += `<div class="flex justify-between p-1 bg-purple-50 rounded items-center"><span>"${r.keyword}" &rarr; ${r.categoryName}</span><button onclick="delRule('${r.id}')" class="text-red-500">&times;</button></div>`;
              });
-             html += `</div><button onclick="window.clearAllRules()" class="w-full mt-2 bg-red-50 text-red-600 text-xs py-1 rounded">Clear All Rules</button>`;
+             html += `</div><button onclick="window.clearAllRules()" class="w-full mt-2 bg-red-50 text-red-600 text-xs py-1 rounded hover:bg-red-100 border border-red-200">Clear Rules</button>`;
              
              container.innerHTML = html;
         }
-        
-        const renderRulesList = () => { /* Merged into renderCatManager above */ };
-
 
         // --- ACTIONS ---
         window.toggleEdit = (id) => { editingId = (editingId === id ? null : id); updateDashboard(); };
         window.cancelEdit = () => { editingId = null; updateDashboard(); };
         window.saveEdit = async (id) => {
             const newCat = document.getElementById(`edit-cat-${id}`).value;
-            await db.collection(`users/${user.uid}/transactions`).doc(id).update({ category: newCat });
+            // Also check notes if input exists, but simple edit for now
+            const noteInput = document.getElementById(`edit-note-${id}`);
+            const updateData = { category: newCat };
+            if(noteInput) updateData.note = noteInput.value;
+
+            await db.collection(`users/${user.uid}/transactions`).doc(id).update(updateData);
             editingId = null;
             await fetchTransactions();
             updateDashboard();
         };
         window.deleteTx = async (id) => { if(confirm("Delete?")) { await db.collection(`users/${user.uid}/transactions`).doc(id).delete(); await fetchTransactions(); updateDashboard(); } };
+
         window.clearAllTransactions = async () => {
              if (!confirm("Are you sure you want to DELETE ALL transactions?")) return;
              if (!confirm("This cannot be undone. Wipe all data?")) return;
@@ -483,10 +565,16 @@
             if(!confirm("Delete ALL categorization rules?")) return;
              rules = []; updateDashboard();
              const collectionRef = db.collection(`users/${user.uid}/rules`);
-             const snapshot = await collectionRef.get();
-             const batch = db.batch();
-             snapshot.docs.forEach(doc => batch.delete(doc.ref));
-             await batch.commit();
+             async function deleteInBatches() {
+                 while(true) {
+                    const snapshot = await collectionRef.limit(400).get();
+                    if(snapshot.size === 0) break;
+                    const batch = db.batch();
+                    snapshot.docs.forEach(doc => batch.delete(doc.ref));
+                    await batch.commit();
+                 }
+             }
+             await deleteInBatches();
              alert("Rules cleared.");
              await fetchRules();
              updateDashboard();
@@ -509,12 +597,6 @@
             const uncExp = categories.find(c=>c.name==='Uncategorized Expense') || DEFAULT_CATEGORIES[1];
 
             parsed.data.forEach(row => {
-                // Simple duplicate check: Skip if same transaction exists in memory
-                // Note: Ideally we check DB, but transactions[] is full list here.
-                // Removed strictly signature check to allow duplicates per user request "Won't get rid of transactions"
-                // But to prevent double-import of same file, we can check signature.
-                // Re-enabling permissive import: IMPORT EVERYTHING from file.
-                
                 let cat = row.type === 'income' ? uncInc.name : uncExp.name;
                 const rule = rules.find(r => row.description.toUpperCase().includes(r.keyword.toUpperCase()));
                 if(rule) cat = rule.categoryName;
@@ -531,23 +613,24 @@
             updateDashboard();
         });
         
-        // Rules Import (Auto-runs)
+        // Rules Import
         document.getElementById('rules-input').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
             const text = await file.text();
-            const rows = text.split('\n').slice(1);
+            
+            // Simple CSV parse for rules (keyword, category)
+            const lines = text.split('\n').slice(1);
             const batch = db.batch();
             let count = 0;
             
-            rows.forEach(row => {
+            lines.forEach(row => {
                 const cols = row.split(',');
                 if(cols.length < 2) return;
                 const keyword = cols[0].trim();
                 const categoryName = cols[1].trim();
                 if(!keyword || !categoryName) return;
                 
-                // Only add if category exists
                 const cat = categories.find(c => c.name === categoryName);
                 if(!cat) return; 
 
@@ -557,9 +640,10 @@
             });
             
             await batch.commit();
-            
-            // Auto-Categorize existing
+            alert(`Imported ${count} rules.`);
+            e.target.value = '';
             await fetchRules();
+            // Auto-apply
             const txBatch = db.batch();
             let updates = 0;
             transactions.filter(t => t.category.includes('Uncategorized')).forEach(t => {
@@ -569,67 +653,27 @@
                     updates++;
                 }
             });
-            if(updates > 0) await txBatch.commit();
-
-            alert(`Imported ${count} rules. Updated ${updates} existing transactions.`);
-            e.target.value = '';
-            await fetchTransactions();
+            if(updates > 0) { await txBatch.commit(); alert(`Updated ${updates} transactions.`); await fetchTransactions(); }
             updateDashboard();
         });
 
-        // Smart CSV Parser
-        const smartParseCSV = (text) => {
-            const lines = text.split('\n').filter(l => l.trim());
-            if(lines.length < 2) return null;
-            
-            const headers = lines[0].split(',').map(h => h.toLowerCase().trim().replace(/["']/g, ''));
-            const idx = {
-                date: headers.findIndex(h => h.includes('date') && !h.includes('post')),
-                desc: headers.findIndex(h => h.includes('desc') || h.includes('memo') || h.includes('payee')),
-                amt: headers.findIndex(h => h.includes('amount') || h === 'amt'),
-                type: headers.findIndex(h => h.includes('type') || h.includes('indicator')),
-                debit: headers.findIndex(h => h.includes('debit')),
-                credit: headers.findIndex(h => h.includes('credit'))
-            };
-            
-            if (idx.date === -1) idx.date = headers.findIndex(h => h.includes('date'));
-            if(idx.date === -1 || (idx.amt === -1 && idx.debit === -1)) return { error: "Header mismatch. Need Date/Amount." };
-
-            const data = [];
-            for(let i=1; i<lines.length; i++) {
-                const row = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || []; 
-                const cols = row.length < headers.length ? lines[i].split(',') : row;
-                const clean = (val) => val ? val.replace(/^"|"$/g, '').trim() : '';
-
-                let dateStr = clean(cols[idx.date]);
-                let desc = clean(cols[idx.desc]);
-                let amount = 0;
-                let type = 'expense';
-
-                if(idx.debit > -1 && idx.credit > -1) {
-                    const d = parseFloat(clean(cols[idx.debit]) || 0);
-                    const c = parseFloat(clean(cols[idx.credit]) || 0);
-                    if(c > 0) { amount = c; type = 'income'; } else { amount = d; type = 'expense'; }
-                } else if (idx.amt > -1) {
-                    let rawAmt = clean(cols[idx.amt]).replace(/[$,]/g, '');
-                    amount = parseFloat(rawAmt);
-                    if (idx.type > -1) {
-                        const tVal = clean(cols[idx.type]).toLowerCase();
-                        type = (tVal.includes('cr') || tVal.includes('dep') || tVal.includes('inc')) ? 'income' : 'expense';
-                        amount = Math.abs(amount);
-                    } else {
-                        if (amount < 0) { type = 'expense'; amount = Math.abs(amount); }
-                        else { type = 'expense'; } // Default to expense for safety
-                    }
-                }
-                const dateObj = parseDateFlexible(dateStr);
-                if(dateObj && !isNaN(amount)) data.push({ date: dateObj, amount, type, description: desc });
-            }
-            return { data };
+        window.downloadBackup = () => {
+            const blob = new Blob([JSON.stringify({categories, transactions, rules})], {type:'application/json'});
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `budget_backup.json`; a.click();
         };
-
-        window.downloadBackup = () => { const blob = new Blob([JSON.stringify({categories, transactions, rules})], {type:'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `budget_backup.json`; a.click(); };
-        window.restoreBackup = async (e) => { const file = e.target.files[0]; if (!file || !confirm("Restore?")) return; const data = JSON.parse(await file.text()); /* Reuse batch logic from previous */ alert("Not fully implemented in this snippet for brevity, use CSV for data."); };
+        window.restoreBackup = async (e) => {
+             const file = e.target.files[0];
+             if (!file || !confirm("Restore will merge. Continue?")) return;
+             const data = JSON.parse(await file.text());
+             const batch = db.batch();
+             data.categories.forEach(c => batch.set(db.collection(`users/${user.uid}/categories`).doc(c.id), c));
+             data.transactions.forEach(t => batch.set(db.collection(`users/${user.uid}/transactions`).doc(t.id), t));
+             data.rules.forEach(r => batch.set(db.collection(`users/${user.uid}/rules`).doc(r.id||crypto.randomUUID()), r));
+             await batch.commit();
+             alert("Restored.");
+             loadUserData();
+             e.target.value = '';
+        };
         window.exportPortableReport = window.downloadBackup;
     </script>
 </body>
