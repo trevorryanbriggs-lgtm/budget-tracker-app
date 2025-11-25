@@ -261,59 +261,49 @@
         }
 
         // --- SMART CSV PARSER ---
-        const smartParseCSV = (text) => {
-            const lines = text.split('\n').filter(l => l.trim());
-            if(lines.length < 2) return null;
-            
-            const headers = lines[0].split(',').map(h => h.toLowerCase().trim().replace(/["']/g, ''));
-            const idx = {
-                date: headers.findIndex(h => h.includes('date') && !h.includes('post')),
-                desc: headers.findIndex(h => h.includes('description') || h.includes('memo') || h.includes('payee')),
-                amt: headers.findIndex(h => h.includes('amount') || h === 'amt'),
-                type: headers.findIndex(h => h.includes('type') || h.includes('indicator') || h.includes('credit debit')),
-                debit: headers.findIndex(h => h.includes('debit')),
-                credit: headers.findIndex(h => h.includes('credit'))
-            };
-            
-            if (idx.date === -1) idx.date = headers.findIndex(h => h.includes('date'));
-            if(idx.date === -1 || (idx.amt === -1 && idx.debit === -1)) return { error: "Could not detect Date or Amount columns." };
+        function parseCSV(csvText) {
+    const lines = csvText.split('\n');
+    
+    // 1. Identify headers to find the correct column numbers
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    
+    const dateIndex = headers.indexOf('posting date');
+    const descIndex = headers.indexOf('description');
+    const amountIndex = headers.indexOf('amount');
+    const typeIndex = headers.indexOf('credit debit indicator'); // Looks for "Debit" or "Credit"
 
-            const data = [];
-            for(let i=1; i<lines.length; i++) {
-                const row = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || []; 
-                const cols = row.length < headers.length ? lines[i].split(',') : row;
-                const clean = (val) => val ? val.replace(/^"|"$/g, '').trim() : '';
+    const transactions = [];
 
-                let dateStr = clean(cols[idx.date]);
-                let desc = clean(cols[idx.desc]);
-                let amount = 0;
-                let type = 'expense';
+    // 2. Loop through the rows (start at 1 to skip header)
+    for (let i = 1; i < lines.length; i++) {
+        const row = lines[i].split(',');
 
-                if(idx.debit > -1 && idx.credit > -1) {
-                    const debitVal = parseFloat(clean(cols[idx.debit]) || 0);
-                    const creditVal = parseFloat(clean(cols[idx.credit]) || 0);
-                    if(creditVal > 0) { amount = creditVal; type = 'income'; }
-                    else { amount = debitVal; type = 'expense'; }
-                } else if (idx.amt > -1) {
-                    let rawAmt = clean(cols[idx.amt]).replace(/[$,]/g, '');
-                    amount = parseFloat(rawAmt);
-                    if (idx.type > -1) {
-                        const tVal = clean(cols[idx.type]).toLowerCase();
-                        type = (tVal.includes('credit') || tVal.includes('dep') || tVal.includes('inc')) ? 'income' : 'expense';
-                        amount = Math.abs(amount);
-                    } else {
-                        if (amount < 0) { type = 'expense'; amount = Math.abs(amount); }
-                        else { type = 'expense'; } 
-                    }
-                }
+        // Skip incomplete rows
+        if (row.length < headers.length) continue;
 
-                const dateObj = parseDateFlexible(dateStr);
-                if(dateObj && !isNaN(amount)) {
-                    data.push({ date: dateObj, amount, type, description: desc });
-                }
-            }
-            return { data };
-        };
+        let amount = parseFloat(row[amountIndex]);
+        const type = row[typeIndex]?.trim(); // "Debit" or "Credit"
+
+        // 3. Logic: If it says "Debit", make the number negative
+        if (type === 'Debit') {
+            amount = -Math.abs(amount); 
+        }
+
+        if (!isNaN(amount) && row[dateIndex]) {
+            transactions.push({
+                id: Date.now() + i, 
+                date: row[dateIndex],
+                description: row[descIndex]?.replace(/"/g, ''), // Remove extra quotes
+                amount: amount,
+                category: 'Uncategorized'
+            });
+        }
+    }
+
+    console.log(`Successfully parsed ${transactions.length} transactions.`);
+    return transactions;
+};
+
 
         // --- HELPERS ---
         function parseDateFlexible(raw) {
