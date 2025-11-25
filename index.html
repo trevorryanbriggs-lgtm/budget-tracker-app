@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- FIREBASE LIBRARIES -->
+    <!-- FIREBASE COMPATIBILITY LIBS -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -29,17 +29,15 @@
 </head>
 <body class="min-h-screen text-gray-800 pb-20">
 
-    <!-- AUTH SCREEN -->
+    <!-- LOGIN -->
     <div id="auth-container" class="min-h-screen flex items-center justify-center p-4">
         <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md space-y-6">
             <h1 class="text-3xl font-extrabold text-center text-indigo-600">Cloud Budget</h1>
-            
             <div id="config-form" class="hidden space-y-4">
                 <div class="bg-yellow-50 p-4 text-xs text-yellow-800 rounded"><strong>Action Required:</strong> Paste Firebase Config below.</div>
                 <textarea id="firebase-config-input" rows="6" class="w-full p-3 border rounded text-xs font-mono bg-gray-50"></textarea>
                 <button onclick="saveConfig()" class="w-full py-3 bg-gray-800 text-white rounded font-bold">Save Configuration</button>
             </div>
-
             <div id="login-form" class="hidden space-y-4">
                 <input type="email" id="email" placeholder="Email" class="w-full p-3 border rounded-lg" />
                 <input type="password" id="password" placeholder="Password" class="w-full p-3 border rounded-lg" />
@@ -63,7 +61,7 @@
                 </div>
                 <div class="flex items-center gap-2 bg-indigo-800 p-1.5 rounded-lg">
                     <label class="text-xs font-bold uppercase tracking-wide text-indigo-200">Period:</label>
-                    <select id="month-selector" onchange="window.updateDashboard()" class="bg-white text-indigo-900 text-sm font-bold rounded px-2 py-1 outline-none cursor-pointer">
+                    <select id="header-month-selector" onchange="window.updateDashboard()" class="bg-white text-indigo-900 text-sm font-bold rounded px-2 py-1 outline-none cursor-pointer">
                         <option value="all">All Time</option>
                     </select>
                 </div>
@@ -75,6 +73,7 @@
         </header>
 
         <div class="max-w-7xl mx-auto p-4 space-y-6">
+            <!-- Summary -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-indigo-500">
                     <p class="text-xs font-bold text-gray-500 uppercase">Net Balance</p>
@@ -90,13 +89,16 @@
                 </div>
             </div>
 
+            <!-- Charts -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="bg-white p-4 rounded-xl card-shadow h-64"><canvas id="budgetChart"></canvas></div>
                 <div class="bg-white p-4 rounded-xl card-shadow h-64"><canvas id="spendingChart"></canvas></div>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Data Column -->
                 <div class="lg:col-span-2 space-y-6 order-1 lg:order-2">
+                    <!-- Budget Breakdown (Moved to Top) -->
                     <div class="bg-white rounded-xl card-shadow overflow-hidden">
                         <div class="bg-gray-50 px-4 py-3 border-b font-bold text-sm text-gray-700 flex justify-between">
                             <span>Budget Performance</span>
@@ -112,11 +114,11 @@
                         </div>
                     </div>
 
+                    <!-- History Table -->
                     <div class="bg-white rounded-xl card-shadow overflow-hidden">
-                        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center gap-2">
+                        <div class="bg-gray-50 px-4 py-3 border-b flex justify-between items-center gap-2">
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-gray-700">Transactions</span>
-                                <!-- CLEAR BUTTON MOVED HERE -->
                                 <button id="clear-all-btn" onclick="window.clearAllTransactions()" class="hidden text-[10px] font-bold text-white bg-red-500 hover:bg-red-600 px-2 py-1 rounded transition shadow-sm whitespace-nowrap">Clear All</button>
                             </div>
                             <input type="text" id="search-input" placeholder="Search..." class="text-xs p-1 border rounded w-32" oninput="window.updateDashboard()">
@@ -132,13 +134,14 @@
                     </div>
                 </div>
 
+                <!-- Controls Column -->
                 <div class="lg:col-span-1 space-y-4 order-2 lg:order-1">
                     <div class="bg-white p-4 rounded-xl card-shadow space-y-4">
                         <h3 class="font-bold text-gray-700 text-sm border-b pb-2">Uploads</h3>
                         <div class="space-y-2">
                             <label class="text-xs font-bold text-gray-500">Transactions CSV</label>
                             <input type="file" id="csv-input" accept=".csv" class="block w-full text-xs"/>
-                            <p class="text-[10px] text-gray-400">Req: date, amount, type, description</p>
+                            <p class="text-[10px] text-gray-400">Supports: Bank Export or Simple (Date, Amt, Type, Desc)</p>
                         </div>
                         <div class="space-y-2">
                             <label class="text-xs font-bold text-gray-500">Rules CSV</label>
@@ -151,17 +154,15 @@
                          <h3 class="font-bold text-gray-700 text-sm mb-2">Data Management</h3>
                          <div class="grid grid-cols-2 gap-2">
                              <button onclick="window.downloadBackup()" class="px-3 py-2 bg-blue-50 text-blue-700 rounded text-xs font-bold hover:bg-blue-100">Backup JSON</button>
-                             <label class="cursor-pointer px-3 py-2 bg-green-50 text-green-700 rounded text-xs font-bold hover:bg-green-100 text-center">
-                                 Restore
-                                 <input type="file" class="hidden" accept=".json" onchange="window.restoreBackup(event)">
-                             </label>
+                             <button onclick="document.getElementById('restore-input').click()" class="bg-green-50 text-green-700 text-xs font-bold hover:bg-green-100">Restore</button>
+                             <input type="file" id="restore-input" class="hidden" accept=".json" onchange="window.restoreBackup(event)">
                          </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Feedback Message Area (Required for showFeedback) -->
+        <!-- Feedback Message Area -->
         <div id="feedback-container" class="fixed top-4 right-4 z-50 transition-opacity duration-300 opacity-0 pointer-events-none"></div>
     </div>
 
@@ -181,6 +182,7 @@
         let app, auth, db, user;
         let categories = [], transactions = [], rules = [], charts = {};
         let editingId = null;
+        let currentMonthFilter = 'all';
 
         // --- DEFAULTS ---
         const DEFAULT_CATEGORIES = [
@@ -229,7 +231,7 @@
             { id: 'inc-2', name: 'Salary (Trevor)', type: 'income', group: 'Income', budget: 0, sort: 3 },
         ];
 
-        // --- CONFIG & INIT ---
+        // --- INIT & AUTH ---
         const storedConfig = localStorage.getItem('app_firebase_config');
         if(firebaseConfig.apiKey.includes('PASTE')) {
             if(storedConfig) initFirebase(JSON.parse(storedConfig));
@@ -284,15 +286,86 @@
             updateDashboard();
         }
 
+        // --- SMART CSV PARSER ---
+        const parseSmartCSV = (text) => {
+            const lines = text.split('\n').filter(l => l.trim());
+            if(lines.length < 2) return null;
+            
+            // Normalize Headers to find columns
+            const headers = lines[0].split(',').map(h => h.toLowerCase().trim().replace(/["']/g, ''));
+            
+            // Map indices based on common bank headers vs simple format
+            const idx = {
+                date: headers.findIndex(h => h.includes('date') && !h.includes('post')), // Prefer 'Transaction Date' over 'Posting'
+                desc: headers.findIndex(h => h.includes('description') || h.includes('memo') || h.includes('payee')),
+                amt: headers.findIndex(h => h === 'amount' || h.includes('amount')), // Exact match preference
+                type: headers.findIndex(h => h.includes('type') || h.includes('indicator')),
+                // Fallbacks
+                debit: headers.findIndex(h => h.includes('debit')),
+                credit: headers.findIndex(h => h.includes('credit'))
+            };
+            
+            // Fallback for Date if 'Transaction Date' not found, try any date
+            if (idx.date === -1) idx.date = headers.findIndex(h => h.includes('date'));
+
+            if(idx.date === -1 || (idx.amt === -1 && idx.debit === -1)) return { error: "Could not detect Date or Amount columns." };
+
+            const data = [];
+            for(let i=1; i<lines.length; i++) {
+                // Handle commas inside quotes
+                const row = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || []; 
+                const cols = row.length < headers.length ? lines[i].split(',') : row;
+                const clean = (val) => val ? val.replace(/^"|"$/g, '').trim() : '';
+
+                let dateStr = clean(cols[idx.date]);
+                let desc = clean(cols[idx.desc]);
+                let amount = 0;
+                let type = 'expense';
+
+                // 1. Handle Amounts & Type
+                if(idx.amt > -1) {
+                    let rawAmt = clean(cols[idx.amt]).replace(/[$,]/g, '');
+                    amount = parseFloat(rawAmt);
+                    
+                    if (idx.type > -1) {
+                        // If Type column exists (e.g. "Credit" or "Debit")
+                        const typeVal = clean(cols[idx.type]).toLowerCase();
+                        if (typeVal.includes('credit') || typeVal.includes('dep') || typeVal.includes('inc')) {
+                            type = 'income';
+                        } else {
+                            type = 'expense';
+                        }
+                        amount = Math.abs(amount); // Ensure positive magnitude
+                    } else {
+                        // Infer from sign (Negative = Expense)
+                        if (amount < 0) { type = 'expense'; amount = Math.abs(amount); }
+                        else { type = 'income'; } // Assumption: Positive is Income if no type col? 
+                        // Refined assumption: For credit cards, positive is usually payment (income) or refund. 
+                        // If uncertain, default to expense if positive logic fails.
+                    }
+                }
+
+                // Parse Date
+                const dateObj = parseDateFlexible(dateStr);
+                
+                if(dateObj && !isNaN(amount)) {
+                    data.push({ date: dateObj, amount, type, description: desc });
+                }
+            }
+            return { data };
+        };
+
         // --- HELPERS ---
         function getTxMonth(t) {
             if (!t.date) return null;
             if (t.date.match(/^\d{4}-\d{2}-\d{2}$/)) return t.date.substring(0, 7);
             const m = t.date.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-            if(m) return `${m[3]}-${m[1].padStart(2, '0')}`;
+            if(m) {
+                const y = m[3]; const mo = m[1].padStart(2, '0');
+                return `${y}-${mo}`;
+            }
             const d = new Date(t.date);
-            if(!isNaN(d)) return d.toISOString().substring(0, 7);
-            return null;
+            return isNaN(d) ? null : d.toISOString().substring(0, 7);
         }
 
         function formatDateDisplay(dateStr) {
@@ -327,17 +400,8 @@
 
         // --- DASHBOARD UPDATE ---
         window.updateDashboard = () => {
-            const monthFilter = document.getElementById('month-selector').value;
+            const monthFilter = document.getElementById('header-month-selector').value;
             const term = document.getElementById('search-input').value.toLowerCase();
-            
-            // SHOW CLEAR BUTTON IF TRANSACTIONS EXIST AND NOT IN "ALL TIME" VIEW?
-            // Actually, allow clearing at any time if list is populated
-            const clearBtn = document.getElementById('clear-all-btn');
-            if (transactions.length > 0) {
-                clearBtn.classList.remove('hidden');
-            } else {
-                clearBtn.classList.add('hidden');
-            }
 
             const filtered = transactions.filter(t => {
                 const m = getTxMonth(t);
@@ -346,10 +410,10 @@
                 return matchMonth && matchSearch;
             });
 
-            const selector = document.getElementById('month-selector');
+            // Selector
+            const selector = document.getElementById('header-month-selector');
             const validMonths = [...new Set(transactions.map(getTxMonth).filter(Boolean))].sort().reverse();
             const savedVal = selector.value;
-            
             if(selector.options.length !== validMonths.length + 1) {
                 selector.innerHTML = `<option value="all">All Time</option>` + validMonths.map(m => {
                     const d = new Date(m+'-01T00:00:00');
@@ -358,6 +422,9 @@
                 }).join('');
                 selector.value = savedVal;
             }
+
+            const clearBtn = document.getElementById('clear-all-btn');
+            if (transactions.length > 0) clearBtn.classList.remove('hidden'); else clearBtn.classList.add('hidden');
 
             const multiplier = monthFilter === 'all' ? (getUniqueMonthsCount(filtered) || 1) : 1;
 
@@ -463,16 +530,13 @@
         };
         window.deleteTx = async (id) => { if(confirm("Delete?")) { await db.collection(`users/${user.uid}/transactions`).doc(id).delete(); await fetchTransactions(); updateDashboard(); } };
 
-        // REAL-TIME CLEAR
         window.clearAllTransactions = async () => {
              if (!confirm("Are you sure you want to DELETE ALL transactions?")) return;
              if (!confirm("This cannot be undone. Wipe all data?")) return;
 
-             // 1. Optimistic UI update - Instant Clear
              transactions = [];
              updateDashboard(); 
              
-             // 2. Background Database Wipe
              const batchSize = 400;
              const collectionRef = db.collection(`users/${user.uid}/transactions`);
              async function deleteInBatches() {
@@ -488,44 +552,46 @@
              try { 
                  await deleteInBatches(); 
                  showFeedback("All transactions permanently deleted.", false);
-                 // No need to fetchTransactions here because we already cleared state.
-                 // Next load/refresh will confirm it's empty.
              } catch (error) { 
                  console.error(error); 
                  showFeedback("Error clearing cloud data. Please refresh.", true); 
              }
         };
 
-        // ... (rest of CSV upload, backup functions, etc. - no changes needed) ...
-        // [CSV Parsers and Backup functions remain same as above]
-        
-        // Re-including imports for completeness
+        // CSV Upload - Uses Smart Parser
         document.getElementById('csv-input').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if(!file) return;
             const text = await file.text();
-            const rows = text.split('\n').slice(1);
+            const result = parseSmartCSV(text); // Use Smart Parser
+            
+            if(!result || result.error) {
+                 // Fallback to old method if smart fail? No, show error.
+                 // Actually, let's try simple parse if smart fails?
+                 // Simple parse logic:
+                 alert("Could not detect columns automatically. Please ensure headers include 'Date' and 'Amount'.");
+                 return;
+            }
+            
             const batch = db.batch();
             let count = 0;
             const existingSigs = new Set(transactions.map(t => `${t.date}-${t.amount}-${t.description}`));
-            rows.forEach(row => {
-                const cols = row.split(',');
-                if(cols.length < 4) return;
-                const date = parseDateFlexible(cols[0].trim());
-                const amt = parseFloat(cols[1].trim());
-                const typeRaw = cols[2].trim().toLowerCase();
-                const desc = cols[3].trim().replace(/^"|"$/g, '');
-                if(!date || isNaN(amt)) return;
-                let type = (typeRaw.includes('credit') || typeRaw.includes('inc')) ? 'income' : 'expense';
-                let cat = type === 'income' ? 'Uncategorized Income' : 'Uncategorized Expense';
-                const rule = rules.find(r => desc.toUpperCase().includes(r.keyword.toUpperCase()));
-                if(rule) cat = rule.categoryName;
-                const sig = `${date}-${amt}-${desc}`;
+            const uncInc = categories.find(c=>c.name==='Uncategorized Income') || DEFAULT_CATEGORIES[0];
+            const uncExp = categories.find(c=>c.name==='Uncategorized Expense') || DEFAULT_CATEGORIES[1];
+
+            result.data.forEach(row => {
+                const sig = `${row.date}-${row.amount}-${row.description}`;
                 if(existingSigs.has(sig)) return;
+
+                let cat = row.type === 'income' ? uncInc.name : uncExp.name;
+                const rule = rules.find(r => row.description.toUpperCase().includes(r.keyword.toUpperCase()));
+                if(rule) cat = rule.categoryName;
+
                 const ref = db.collection(`users/${user.uid}/transactions`).doc();
-                batch.set(ref, { date, amount: amt, type, category: cat, description: desc });
+                batch.set(ref, { ...row, category: cat });
                 count++;
             });
+
             await batch.commit();
             alert(`Uploaded ${count} transactions.`);
             e.target.value = '';
@@ -554,3 +620,5 @@
     </script>
 </body>
 </html>
+
+
