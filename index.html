@@ -11,7 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- FIREBASE LIBRARIES -->
+    <!-- FIREBASE -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -79,15 +79,21 @@
                     <div class="px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center"><h3 class="text-sm font-bold text-slate-700">Budget Performance</h3><span id="budget-multiplier-label" class="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-mono">Monthly</span></div>
                     <div class="overflow-x-auto max-h-96 custom-scroll"><table class="w-full text-sm text-left"><thead class="text-xs text-slate-400 uppercase bg-slate-50 sticky top-0"><tr><th class="px-5 py-3">Category</th><th class="px-5 py-3 text-right">Limit</th><th class="px-5 py-3 text-right">Spent</th><th class="px-5 py-3 text-right">Left</th></tr></thead><tbody id="budget-table-body"></tbody></table></div>
                 </div>
+                <div class="glass-panel p-5"><h3 class="text-sm font-bold text-slate-700 mb-4 border-b pb-2">Area Totals</h3><div id="group-breakdown-list" class="space-y-3"></div></div>
+
+                <!-- History Table -->
                 <div class="glass-panel overflow-hidden">
                     <div class="px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center gap-2">
-                        <div class="flex items-center gap-2"><h3 class="text-sm font-bold text-slate-700">History</h3><button id="clear-all-btn" onclick="window.clearAllTransactions()" class="hidden text-[10px] bg-rose-50 text-rose-600 px-2 py-1 rounded font-bold hover:bg-rose-100">Clear All</button></div>
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-sm font-bold text-slate-700">History</h3>
+                            <button id="clear-all-btn" onclick="window.clearAllTransactions()" class="hidden text-[10px] bg-rose-50 text-rose-600 px-2 py-1 rounded font-bold hover:bg-rose-100 border border-rose-200">Clear All</button>
+                        </div>
                         <input type="text" id="search-input" placeholder="Search..." class="pl-2 pr-2 py-1 text-xs border border-slate-200 rounded-lg w-32" oninput="window.updateDashboard()">
                     </div>
-                    <div class="overflow-x-auto max-h-[500px] custom-scroll"><table class="w-full text-sm text-left"><thead class="text-xs text-slate-400 uppercase bg-slate-50 sticky top-0"><tr><th class="px-5 py-3">Date</th><th class="px-5 py-3">Desc</th><th class="px-5 py-3">Category</th><th class="px-5 py-3 text-right">Amt</th><th class="px-5 py-3 w-8"></th></tr></thead><tbody id="history-table-body"></tbody></table></div>
+                    <div class="overflow-x-auto max-h-[500px] custom-scroll"><table class="w-full text-sm text-left"><thead class="text-xs text-slate-400 uppercase bg-slate-50 sticky top-0"><tr><th class="px-5 py-3">Date</th><th class="px-5 py-3">Desc</th><th class="px-5 py-3">Cat</th><th class="px-5 py-3 text-right">Amt</th><th class="px-5 py-3 w-8"></th></tr></thead><tbody id="history-table-body"></tbody></table></div>
                 </div>
-                <div class="glass-panel p-5"><h3 class="text-sm font-bold text-slate-700 mb-4 border-b pb-2">Area Totals</h3><div id="group-breakdown-list" class="space-y-3"></div></div>
             </div>
+
             <!-- Controls -->
             <div class="lg:col-span-1 space-y-4 order-2 lg:order-1">
                 <!-- Uploads -->
@@ -98,7 +104,7 @@
                             <input type="file" id="csv-input" accept=".csv" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/>
                             <i data-lucide="file-spreadsheet" class="w-8 h-8 text-indigo-400 mx-auto mb-2"></i>
                             <p class="text-xs font-bold text-indigo-600">Upload Transactions</p>
-                            <p class="text-[10px] text-slate-400">Bank CSV or Simple Format</p>
+                            <p class="text-[10px] text-slate-400">Supports: Date, Amount, Type, Desc</p>
                         </div>
                         <div class="p-3 border border-slate-100 rounded-xl flex justify-between items-center bg-slate-50/50">
                             <div class="text-xs"><p class="font-bold text-slate-700">Rules CSV</p></div>
@@ -107,8 +113,7 @@
                     </div>
                 </div>
                 
-                <!-- Category Manager -->
-                <div class="glass-panel p-5" id="category-manager-container"></div>
+                <div id="category-manager-container" class="glass-panel p-5"></div>
                 
                 <div class="p-4 rounded-xl border border-slate-200 bg-slate-100/50 grid grid-cols-2 gap-2">
                     <button onclick="window.downloadBackup()" class="bg-white border border-slate-200 text-slate-600 py-2 rounded-lg text-xs font-bold">Backup JSON</button>
@@ -239,13 +244,17 @@
             rules = r.docs.map(d => d.data());
             updateDashboard();
         }
+
         async function uploadDefaultCategories(uid) {
             const batch = db.batch();
-            DEFAULT_CATEGORIES.forEach(cat => batch.set(db.collection(`users/${uid}/categories`).doc(cat.id), cat));
+            DEFAULT_CATEGORIES.forEach(cat => {
+                const ref = db.collection(`users/${uid}/categories`).doc(cat.id);
+                batch.set(ref, cat);
+            });
             await batch.commit();
         }
 
-        // --- ROBUST CSV PARSER ---
+        // --- SIMPLE PARSER (Character Walk) ---
         function parseCSVLine(line) {
             const result = [];
             let current = '';
@@ -260,12 +269,17 @@
             return result;
         }
 
-        const smartParseCSV = (text) => {
-            const lines = text.split('\n').filter(l => l.trim());
+        const simpleParseCSV = (text) => {
+            // Remove BOM
+            const cleanText = text.replace(/^\uFEFF/, '');
+            const lines = cleanText.split('\n').filter(l => l.trim());
             if(lines.length < 2) return null;
+            
+            // Lowercase headers for matching
             const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/["']/g, ''));
             
-            let idx = {
+            // Column Detection with Fallbacks
+            const idx = {
                 date: headers.findIndex(h => h.includes('date') && !h.includes('post')),
                 desc: headers.findIndex(h => h.includes('description') || h.includes('memo') || h.includes('payee')),
                 amt: headers.findIndex(h => h === 'amount' || h.includes('amount')),
@@ -273,8 +287,11 @@
                 debit: headers.findIndex(h => h.includes('debit')),
                 credit: headers.findIndex(h => h.includes('credit'))
             };
-            if (idx.date === -1) idx.date = headers.findIndex(h => h.includes('date'));
-            if (idx.date === -1 || (idx.amt === -1 && idx.debit === -1)) return { error: "Missing Date or Amount column." };
+            
+            // Try to find "Date" if "Transaction Date" failed
+            if(idx.date === -1) idx.date = headers.findIndex(h => h.includes('date'));
+            
+            if(idx.date === -1 || (idx.amt === -1 && idx.debit === -1)) return { error: `Missing Columns. Found: ${headers.join(', ')}` };
 
             const data = [];
             for(let i=1; i<lines.length; i++) {
@@ -286,14 +303,16 @@
                 let amount = 0;
                 let type = 'expense';
 
+                // Amount Logic
                 if(idx.debit > -1 && idx.credit > -1) {
                     const dVal = parseFloat((cols[idx.debit]||"0").replace(/[$,]/g,''));
                     const cVal = parseFloat((cols[idx.credit]||"0").replace(/[$,]/g,''));
-                    if(cVal > 0) { amount = cVal; type = 'income'; } else { amount = dVal; type = 'expense'; }
+                    if(cVal > 0) { amount = cVal; type = 'income'; } 
+                    else { amount = dVal; type = 'expense'; }
                 } else if(idx.amt > -1) {
                     let rawAmt = (cols[idx.amt]||"0").replace(/[$,]/g,'');
                     amount = parseFloat(rawAmt);
-                    if (idx.type > -1) {
+                    if(idx.type > -1) {
                         const tVal = (cols[idx.type]||"").toLowerCase();
                         if(tVal.includes('credit') || tVal.includes('dep') || tVal.includes('inc')) type = 'income';
                         else type = 'expense';
@@ -315,12 +334,16 @@
         // --- HELPERS ---
         function parseDateFlexible(raw) {
             if(!raw) return null;
-            if(raw.match(/^\d{4}-\d{2}-\d{2}$/)) return raw;
-            const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-            if(m) {
-                let y = m[3]; if(y.length===2) y='20'+y;
-                return `${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+            // Check MM/DD/YYYY (US Standard) - e.g. 11/20/2024
+            const mUS = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+            if(mUS) {
+                let y = mUS[3]; if(y.length===2) y='20'+y;
+                return `${y}-${mUS[1].padStart(2,'0')}-${mUS[2].padStart(2,'0')}`;
             }
+            // Check YYYY-MM-DD (ISO) - e.g. 2024-11-20
+            if(raw.match(/^\d{4}-\d{2}-\d{2}$/)) return raw;
+            
+            // Fallback Date()
             const d = new Date(raw);
             return isNaN(d) ? null : d.toISOString().split('T')[0];
         }
@@ -338,28 +361,34 @@
             setTimeout(() => c.classList.add('opacity-0', 'pointer-events-none'), 5000);
         };
 
-        // --- UPDATE ---
+        // --- DASHBOARD UPDATE ---
         window.updateDashboard = () => {
-            const selector = document.getElementById('month-selector');
-            const allMonths = [...new Set(transactions.map(getTxMonth).filter(Boolean))].sort().reverse();
-            
-            if(currentMonthFilter === 'all' && selector.options.length <= 1 && allMonths.length > 0) {
-                const now = new Date().toISOString().substring(0, 7);
-                currentMonthFilter = allMonths.includes(now) ? now : allMonths[0];
-            } else {
-                currentMonthFilter = selector.value;
-            }
-
+            const monthFilter = document.getElementById('month-selector').value;
             const term = document.getElementById('search-input').value.toLowerCase();
+
             const filtered = transactions.filter(t => {
                 const m = getTxMonth(t);
-                const matchMonth = currentMonthFilter === 'all' || m === currentMonthFilter;
-                const matchSearch = !term || t.description.toLowerCase().includes(term) || t.category.toLowerCase().includes(term);
+                const matchMonth = monthFilter === 'all' || m === monthFilter;
+                const matchSearch = !term || t.description.toLowerCase().includes(term) || t.category.toLowerCase().includes(term) || t.amount.toString().includes(term);
                 return matchMonth && matchSearch;
             });
 
-            if(selector.options.length !== allMonths.length + 1) {
-                selector.innerHTML = `<option value="all">All Time</option>` + allMonths.map(m => {
+            // Refresh Selector
+            const selector = document.getElementById('month-selector');
+            const validMonths = [...new Set(transactions.map(getTxMonth).filter(Boolean))].sort().reverse();
+            
+            // Smart Default Logic: Only on first load/empty selection
+            if(currentMonthFilter === 'all' && selector.options.length <= 1 && validMonths.length > 0) {
+                const now = new Date().toISOString().substring(0, 7);
+                // If we have data for current month, select it. Else select most recent.
+                currentMonthFilter = validMonths.includes(now) ? now : validMonths[0];
+            } else if (selector.value !== currentMonthFilter) {
+                 // Keep selection if user changed it
+                 currentMonthFilter = selector.value;
+            }
+
+            if(selector.options.length !== validMonths.length + 1) {
+                selector.innerHTML = `<option value="all">All Time</option>` + validMonths.map(m => {
                     const d = new Date(m+'-01T00:00:00');
                     const label = d.toLocaleString('default', {month:'short', year:'numeric'});
                     return `<option value="${m}">${label}</option>`;
@@ -386,6 +415,7 @@
              window.updateDashboard();
         });
 
+        // --- RENDERERS (Summary, Charts, Tables) ---
         function updateSummary(txs) {
             const inc = txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
             const exp = txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
@@ -403,9 +433,9 @@
             if(charts.bar) charts.bar.destroy();
             charts.bar = new Chart(document.getElementById('budgetChart'), { type: 'bar', data: { labels: groups, datasets: [{ label: 'Spent', data: actuals, backgroundColor: '#ef4444', borderRadius: 4 }, { label: 'Budget', data: budgets, backgroundColor: '#3b82f6', borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false } });
             if(charts.doughnut) charts.doughnut.destroy();
-            const expTxs = filtered = txs.filter(t => t.type === 'expense');
+            const expTxs = txs.filter(t => t.type === 'expense');
             const catSum = {}; expTxs.forEach(t => catSum[t.category] = (catSum[t.category]||0) + t.amount);
-            const sorted = Object.entries(catSum).sort((a,b)=>b[1]-a[1]).slice(0,8);
+            const sorted = Object.entries(catSum).sort((a,b)=>b[1]-a[1]).slice(0,6);
             charts.doughnut = new Chart(document.getElementById('spendingChart'), { type: 'doughnut', data: { labels: sorted.map(x=>x[0]), datasets: [{ data: sorted.map(x=>x[1]), backgroundColor: ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#ec4899'] }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: {position: 'right'} } } });
         }
 
@@ -463,12 +493,10 @@
              container.innerHTML = html;
         }
         
-        // --- CATEGORY MANAGER: EDIT/UPDATE ---
         const renderCatManager = () => {
              const container = document.getElementById('category-manager-container');
              let html = `<h3 class="font-bold border-b mb-2 text-sm text-gray-700 flex items-center gap-2"><i data-lucide="tags" class="w-4 h-4"></i> Categories & Rules</h3><div class="max-h-60 overflow-y-auto custom-scroll text-xs space-y-1 mb-4">`;
              categories.sort((a,b)=>a.name.localeCompare(b.name)).forEach(c => {
-                 // Add Edit Button for Category Budget
                  const isEditingCat = editingCatId === c.id;
                  if (isEditingCat) {
                      html += `<div class="p-2 bg-blue-50 border border-blue-200 rounded flex flex-col gap-2">
@@ -515,35 +543,25 @@
         };
         window.deleteTx = async (id) => { if(confirm("Delete?")) { await db.collection(`users/${user.uid}/transactions`).doc(id).delete(); await fetchTransactions(); updateDashboard(); } };
         
-        // Category Edit Actions
+        // Category Edits
         window.editCat = (id) => { editingCatId = id; renderCatManager(); lucide.createIcons(); };
         window.cancelCatEdit = () => { editingCatId = null; renderCatManager(); lucide.createIcons(); };
         window.saveCatEdit = async (id) => {
             const newName = document.getElementById(`edit-cat-name-${id}`).value;
             const newBudget = parseFloat(document.getElementById(`edit-cat-budget-${id}`).value);
-            
-            // Update category in DB
             await db.collection(`users/${user.uid}/categories`).doc(id).update({ name: newName, budget: newBudget });
-            
-            // Optional: Update transactions if name changed? For simplicity, assume name stable or manual update needed.
-            // Real app would batch update transaction category names.
             if(newName !== categories.find(c=>c.id===id).name) {
-                // Simple bulk update for renamed category
                 const oldName = categories.find(c=>c.id===id).name;
                 const batch = db.batch();
                 const affected = transactions.filter(t => t.category === oldName);
-                affected.forEach(t => {
-                    batch.update(db.collection(`users/${user.uid}/transactions`).doc(t.id), { category: newName });
-                });
+                affected.forEach(t => { batch.update(db.collection(`users/${user.uid}/transactions`).doc(t.id), { category: newName }); });
                 await batch.commit();
                 await fetchTransactions();
             }
-
             editingCatId = null;
             await fetchCategories();
             updateDashboard();
         };
-
 
         window.clearAllTransactions = async () => {
              if (!confirm("DELETE ALL transactions? This cannot be undone.")) return;
@@ -568,6 +586,7 @@
         window.delCat = async (id) => { if(confirm("Delete category?")) { await db.collection(`users/${user.uid}/categories`).doc(id).delete(); await fetchCategories(); updateDashboard(); } };
         window.delRule = async (id) => { if(confirm("Delete rule?")) { await db.collection(`users/${user.uid}/rules`).doc(id).delete(); await fetchRules(); updateDashboard(); } };
 
+        // --- IMPORTS ---
         document.getElementById('csv-input').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if(!file) return;
