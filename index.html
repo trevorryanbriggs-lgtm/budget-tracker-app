@@ -261,48 +261,40 @@
         }
 
         // --- SMART CSV PARSER ---
-        function parseCSV(csvText) {
-    const lines = csvText.split('\n');
+
+// 1. Get the HTML element
+const fileInput = document.getElementById('fileInput');
+
+// 2. Add the listener
+fileInput.addEventListener('change', function(event) {
+    const file = event.target.files[0];
     
-    // 1. Identify headers to find the correct column numbers
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-    
-    const dateIndex = headers.indexOf('posting date');
-    const descIndex = headers.indexOf('description');
-    const amountIndex = headers.indexOf('amount');
-    const typeIndex = headers.indexOf('credit debit indicator'); // Looks for "Debit" or "Credit"
-
-    const transactions = [];
-
-    // 2. Loop through the rows (start at 1 to skip header)
-    for (let i = 1; i < lines.length; i++) {
-        const row = lines[i].split(',');
-
-        // Skip incomplete rows
-        if (row.length < headers.length) continue;
-
-        let amount = parseFloat(row[amountIndex]);
-        const type = row[typeIndex]?.trim(); // "Debit" or "Credit"
-
-        // 3. Logic: If it says "Debit", make the number negative
-        if (type === 'Debit') {
-            amount = -Math.abs(amount); 
-        }
-
-        if (!isNaN(amount) && row[dateIndex]) {
-            transactions.push({
-                id: Date.now() + i, 
-                date: row[dateIndex],
-                description: row[descIndex]?.replace(/"/g, ''), // Remove extra quotes
-                amount: amount,
-                category: 'Uncategorized'
-            });
-        }
+    // Safety check: if they clicked cancel
+    if (!file) {
+        return;
     }
 
-    console.log(`Successfully parsed ${transactions.length} transactions.`);
-    return transactions;
-};
+    // 3. Create a reader to read the text inside the file
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+        const text = e.target.result;
+        
+        // Pass the text to the function we wrote earlier
+        const transactions = parseCSV(text);
+        
+        // FOR DEBUGGING: Log it to ensure it worked
+        console.log("Transactions loaded:", transactions);
+
+        // TODO: Call your function to show these on the screen
+        // renderTransactions(transactions); 
+        // saveToLocalStorage(transactions);
+    };
+
+    // Trigger the read
+    reader.readAsText(file);
+});
+
 
 
         // --- HELPERS ---
