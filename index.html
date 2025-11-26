@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Cloud Budget Tracker</title>
+    
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
@@ -84,13 +85,10 @@
                 <!-- History Table -->
                 <div class="glass-panel overflow-hidden">
                     <div class="px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center gap-2">
-                        <div class="flex items-center gap-2">
-                            <h3 class="text-sm font-bold text-slate-700">History</h3>
-                            <button id="clear-all-btn" onclick="window.clearAllTransactions()" class="hidden text-[10px] bg-rose-50 text-rose-600 px-2 py-1 rounded font-bold hover:bg-rose-100 border border-rose-200">Clear All</button>
-                        </div>
+                        <div class="flex items-center gap-2"><h3 class="text-sm font-bold text-slate-700">History</h3><button id="clear-all-btn" onclick="window.clearAllTransactions()" class="hidden text-[10px] bg-rose-50 text-rose-600 px-2 py-1 rounded font-bold hover:bg-rose-100">Clear All</button></div>
                         <input type="text" id="search-input" placeholder="Search..." class="pl-2 pr-2 py-1 text-xs border border-slate-200 rounded-lg w-32" oninput="window.updateDashboard()">
                     </div>
-                    <div class="overflow-x-auto max-h-[500px] custom-scroll"><table class="w-full text-sm text-left"><thead class="text-xs text-slate-400 uppercase bg-slate-50 sticky top-0"><tr><th class="px-5 py-3">Date</th><th class="px-5 py-3">Desc</th><th class="px-5 py-3">Cat</th><th class="px-5 py-3 text-right">Amt</th><th class="px-5 py-3 w-8"></th></tr></thead><tbody id="history-table-body"></tbody></table></div>
+                    <div class="overflow-x-auto max-h-[500px] custom-scroll"><table class="w-full text-sm text-left"><thead class="text-xs text-slate-400 uppercase bg-slate-50 sticky top-0"><tr><th class="px-5 py-3">Date</th><th class="px-5 py-3">Desc</th><th class="px-5 py-3">Category</th><th class="px-5 py-3 text-right">Amt</th><th class="px-5 py-3 w-8"></th></tr></thead><tbody id="history-table-body"></tbody></table></div>
                 </div>
             </div>
 
@@ -104,7 +102,7 @@
                             <input type="file" id="csv-input" accept=".csv" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/>
                             <i data-lucide="file-spreadsheet" class="w-8 h-8 text-indigo-400 mx-auto mb-2"></i>
                             <p class="text-xs font-bold text-indigo-600">Upload Transactions</p>
-                            <p class="text-[10px] text-slate-400">Supports: Date, Amount, Type, Desc</p>
+                            <p class="text-[10px] text-slate-400">Supports: Date (MM/DD/YYYY), Amt, Type</p>
                         </div>
                         <div class="p-3 border border-slate-100 rounded-xl flex justify-between items-center bg-slate-50/50">
                             <div class="text-xs"><p class="font-bold text-slate-700">Rules CSV</p></div>
@@ -234,27 +232,23 @@
         window.handleLogout = () => auth.signOut();
 
         async function loadUserData() {
-            const [c, t, r] = await Promise.all([
+            const [cSnap, tSnap, rSnap] = await Promise.all([
                 db.collection(`users/${user.uid}/categories`).get(),
                 db.collection(`users/${user.uid}/transactions`).get(),
                 db.collection(`users/${user.uid}/rules`).get()
             ]);
-            categories = c.empty ? DEFAULT_CATEGORIES : c.docs.map(d => d.data());
-            transactions = t.docs.map(d => ({id: d.id, ...d.data()}));
-            rules = r.docs.map(d => d.data());
+            categories = cSnap.empty ? DEFAULT_CATEGORIES : cSnap.docs.map(d => d.data());
+            transactions = tSnap.docs.map(d => ({id: d.id, ...d.data()}));
+            rules = rSnap.docs.map(d => d.data());
             updateDashboard();
         }
-
         async function uploadDefaultCategories(uid) {
             const batch = db.batch();
-            DEFAULT_CATEGORIES.forEach(cat => {
-                const ref = db.collection(`users/${uid}/categories`).doc(cat.id);
-                batch.set(ref, cat);
-            });
+            DEFAULT_CATEGORIES.forEach(cat => batch.set(db.collection(`users/${uid}/categories`).doc(cat.id), cat));
             await batch.commit();
         }
 
-        // --- SIMPLE PARSER (Character Walk) ---
+        // --- ROBUST CSV PARSER (FIXED) ---
         function parseCSVLine(line) {
             const result = [];
             let current = '';
@@ -269,18 +263,14 @@
             return result;
         }
 
-        const simpleParseCSV = (text) => {
-            // Remove BOM
-            const cleanText = text.replace(/^\uFEFF/, '');
-            const lines = cleanText.split('\n').filter(l => l.trim());
+        const smartParseCSV = (text) => {
+            const lines = text.split('\n').filter(l => l.trim());
             if(lines.length < 2) return null;
-            
-            // Lowercase headers for matching
             const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/["']/g, ''));
             
-            // Column Detection with Fallbacks
+            // Column Detection
             const idx = {
-                date: headers.findIndex(h => h.includes('date') && !h.includes('post')),
+                date: headers.findIndex(h => (h.includes('date') && !h.includes('post')) || h.includes('transaction')),
                 desc: headers.findIndex(h => h.includes('description') || h.includes('memo') || h.includes('payee')),
                 amt: headers.findIndex(h => h === 'amount' || h.includes('amount')),
                 type: headers.findIndex(h => h.includes('type') || h.includes('indicator') || h.includes('credit debit')),
@@ -288,10 +278,8 @@
                 credit: headers.findIndex(h => h.includes('credit'))
             };
             
-            // Try to find "Date" if "Transaction Date" failed
-            if(idx.date === -1) idx.date = headers.findIndex(h => h.includes('date'));
-            
-            if(idx.date === -1 || (idx.amt === -1 && idx.debit === -1)) return { error: `Missing Columns. Found: ${headers.join(', ')}` };
+            if (idx.date === -1) idx.date = headers.findIndex(h => h.includes('date'));
+            if (idx.date === -1 || (idx.amt === -1 && idx.debit === -1)) return { error: "Missing Date or Amount column." };
 
             const data = [];
             for(let i=1; i<lines.length; i++) {
@@ -307,12 +295,11 @@
                 if(idx.debit > -1 && idx.credit > -1) {
                     const dVal = parseFloat((cols[idx.debit]||"0").replace(/[$,]/g,''));
                     const cVal = parseFloat((cols[idx.credit]||"0").replace(/[$,]/g,''));
-                    if(cVal > 0) { amount = cVal; type = 'income'; } 
-                    else { amount = dVal; type = 'expense'; }
+                    if(cVal > 0) { amount = cVal; type = 'income'; } else { amount = dVal; type = 'expense'; }
                 } else if(idx.amt > -1) {
                     let rawAmt = (cols[idx.amt]||"0").replace(/[$,]/g,'');
                     amount = parseFloat(rawAmt);
-                    if(idx.type > -1) {
+                    if (idx.type > -1) {
                         const tVal = (cols[idx.type]||"").toLowerCase();
                         if(tVal.includes('credit') || tVal.includes('dep') || tVal.includes('inc')) type = 'income';
                         else type = 'expense';
@@ -334,13 +321,13 @@
         // --- HELPERS ---
         function parseDateFlexible(raw) {
             if(!raw) return null;
-            // Check MM/DD/YYYY (US Standard) - e.g. 11/20/2024
-            const mUS = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-            if(mUS) {
-                let y = mUS[3]; if(y.length===2) y='20'+y;
-                return `${y}-${mUS[1].padStart(2,'0')}-${mUS[2].padStart(2,'0')}`;
+            // Check MM/DD/YYYY or M/D/YYYY
+            const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+            if(m) {
+                let y = m[3]; if(y.length===2) y='20'+y;
+                return `${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
             }
-            // Check YYYY-MM-DD (ISO) - e.g. 2024-11-20
+            // Check YYYY-MM-DD
             if(raw.match(/^\d{4}-\d{2}-\d{2}$/)) return raw;
             
             // Fallback Date()
@@ -353,7 +340,6 @@
         function getUniqueMonthsCount(txs) { return new Set(txs.map(getTxMonth).filter(m => m !== null)).size || 1; }
         function formatMoney(n) { return new Intl.NumberFormat('en-US', {style:'currency', currency:'USD'}).format(n); }
         function getCatGroup(catName) { return categories.find(x => x.name === catName)?.group || 'Other Expenses'; }
-        
         const showFeedback = (msg, err=false) => {
             const c = document.getElementById('feedback-container');
             c.innerHTML = `<div class="p-4 rounded-lg shadow-xl font-medium max-w-sm ${err?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}">${msg}</div>`;
@@ -363,32 +349,27 @@
 
         // --- DASHBOARD UPDATE ---
         window.updateDashboard = () => {
-            const monthFilter = document.getElementById('month-selector').value;
-            const term = document.getElementById('search-input').value.toLowerCase();
+            const selector = document.getElementById('month-selector');
+            const allMonths = [...new Set(transactions.map(getTxMonth).filter(Boolean))].sort().reverse();
+            
+            // Smart Default Selection on first load
+            if(currentMonthFilter === 'all' && selector.options.length <= 1 && allMonths.length > 0) {
+                const now = new Date().toISOString().substring(0, 7);
+                currentMonthFilter = allMonths.includes(now) ? now : allMonths[0];
+            } else {
+                currentMonthFilter = selector.value;
+            }
 
+            const term = document.getElementById('search-input').value.toLowerCase();
             const filtered = transactions.filter(t => {
                 const m = getTxMonth(t);
-                const matchMonth = monthFilter === 'all' || m === monthFilter;
-                const matchSearch = !term || t.description.toLowerCase().includes(term) || t.category.toLowerCase().includes(term) || t.amount.toString().includes(term);
+                const matchMonth = currentMonthFilter === 'all' || m === currentMonthFilter;
+                const matchSearch = !term || t.description.toLowerCase().includes(term) || t.category.toLowerCase().includes(term);
                 return matchMonth && matchSearch;
             });
 
-            // Refresh Selector
-            const selector = document.getElementById('month-selector');
-            const validMonths = [...new Set(transactions.map(getTxMonth).filter(Boolean))].sort().reverse();
-            
-            // Smart Default Logic: Only on first load/empty selection
-            if(currentMonthFilter === 'all' && selector.options.length <= 1 && validMonths.length > 0) {
-                const now = new Date().toISOString().substring(0, 7);
-                // If we have data for current month, select it. Else select most recent.
-                currentMonthFilter = validMonths.includes(now) ? now : validMonths[0];
-            } else if (selector.value !== currentMonthFilter) {
-                 // Keep selection if user changed it
-                 currentMonthFilter = selector.value;
-            }
-
-            if(selector.options.length !== validMonths.length + 1) {
-                selector.innerHTML = `<option value="all">All Time</option>` + validMonths.map(m => {
+            if(selector.options.length !== allMonths.length + 1) {
+                selector.innerHTML = `<option value="all">All Time</option>` + allMonths.map(m => {
                     const d = new Date(m+'-01T00:00:00');
                     const label = d.toLocaleString('default', {month:'short', year:'numeric'});
                     return `<option value="${m}">${label}</option>`;
@@ -415,7 +396,7 @@
              window.updateDashboard();
         });
 
-        // --- RENDERERS (Summary, Charts, Tables) ---
+        // Render Fns
         function updateSummary(txs) {
             const inc = txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
             const exp = txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
@@ -493,6 +474,7 @@
              container.innerHTML = html;
         }
         
+        // --- CATEGORY MANAGER: EDIT/UPDATE ---
         const renderCatManager = () => {
              const container = document.getElementById('category-manager-container');
              let html = `<h3 class="font-bold border-b mb-2 text-sm text-gray-700 flex items-center gap-2"><i data-lucide="tags" class="w-4 h-4"></i> Categories & Rules</h3><div class="max-h-60 overflow-y-auto custom-scroll text-xs space-y-1 mb-4">`;
@@ -529,6 +511,50 @@
              html += `</div><button onclick="window.clearAllRules()" class="w-full mt-3 bg-white text-rose-600 border border-rose-200 text-xs py-2 rounded font-bold hover:bg-rose-50 transition">Clear All Rules</button>`;
              container.innerHTML = html;
         }
+        
+        // Category New Entry
+        const renderAddCatForm = () => {
+            const formHTML = `
+            <h3 class="font-bold border-b mb-2 text-sm text-gray-700">Add New Category</h3>
+            <form id="add-cat-form" class="space-y-2 text-xs">
+                <input type="text" id="new-cat-name" placeholder="Name" required class="w-full p-2 border rounded" />
+                <input type="number" id="new-cat-budget" placeholder="Budget" class="w-full p-2 border rounded" step="0.01" />
+                <select id="new-cat-type" class="w-full p-2 border rounded">
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                </select>
+                <select id="new-cat-group" class="w-full p-2 border rounded">
+                    <option value="Necessary Spending">Necessary Spending</option>
+                    <option value="Giving">Giving</option>
+                    <option value="Additional Spending">Additional Spending</option>
+                    <option value="Other Expenses">Other Expenses</option>
+                    <option value="Income">Income</option>
+                </select>
+                <button type="submit" class="w-full py-2 bg-indigo-600 text-white rounded font-bold">Add</button>
+            </form>
+            `;
+            const div = document.createElement('div');
+            div.innerHTML = formHTML;
+            div.className = "mb-4 p-3 bg-gray-50 rounded border";
+            document.getElementById('category-manager-container').prepend(div);
+            
+            document.getElementById('add-cat-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const name = document.getElementById('new-cat-name').value;
+                const budget = parseFloat(document.getElementById('new-cat-budget').value) || 0;
+                const type = document.getElementById('new-cat-type').value;
+                const group = document.getElementById('new-cat-group').value;
+                
+                if(categories.some(c => c.name.toLowerCase() === name.toLowerCase())) { alert("Category exists."); return; }
+                
+                const ref = db.collection(`users/${user.uid}/categories`).doc();
+                await ref.set({ id: ref.id, name, budget, type, group });
+                
+                e.target.reset();
+                await fetchCategories();
+                updateDashboard();
+            });
+        };
 
         // --- ACTIONS ---
         window.toggleEdit = (id) => { editingId = (editingId === id ? null : id); updateDashboard(); };
@@ -542,27 +568,6 @@
             updateDashboard();
         };
         window.deleteTx = async (id) => { if(confirm("Delete?")) { await db.collection(`users/${user.uid}/transactions`).doc(id).delete(); await fetchTransactions(); updateDashboard(); } };
-        
-        // Category Edits
-        window.editCat = (id) => { editingCatId = id; renderCatManager(); lucide.createIcons(); };
-        window.cancelCatEdit = () => { editingCatId = null; renderCatManager(); lucide.createIcons(); };
-        window.saveCatEdit = async (id) => {
-            const newName = document.getElementById(`edit-cat-name-${id}`).value;
-            const newBudget = parseFloat(document.getElementById(`edit-cat-budget-${id}`).value);
-            await db.collection(`users/${user.uid}/categories`).doc(id).update({ name: newName, budget: newBudget });
-            if(newName !== categories.find(c=>c.id===id).name) {
-                const oldName = categories.find(c=>c.id===id).name;
-                const batch = db.batch();
-                const affected = transactions.filter(t => t.category === oldName);
-                affected.forEach(t => { batch.update(db.collection(`users/${user.uid}/transactions`).doc(t.id), { category: newName }); });
-                await batch.commit();
-                await fetchTransactions();
-            }
-            editingCatId = null;
-            await fetchCategories();
-            updateDashboard();
-        };
-
         window.clearAllTransactions = async () => {
              if (!confirm("DELETE ALL transactions? This cannot be undone.")) return;
              transactions = []; updateDashboard(); 
@@ -585,6 +590,26 @@
         };
         window.delCat = async (id) => { if(confirm("Delete category?")) { await db.collection(`users/${user.uid}/categories`).doc(id).delete(); await fetchCategories(); updateDashboard(); } };
         window.delRule = async (id) => { if(confirm("Delete rule?")) { await db.collection(`users/${user.uid}/rules`).doc(id).delete(); await fetchRules(); updateDashboard(); } };
+        
+        // Category Edits
+        window.editCat = (id) => { editingCatId = id; renderCatManager(); renderAddCatForm(); lucide.createIcons(); };
+        window.cancelCatEdit = () => { editingCatId = null; renderCatManager(); renderAddCatForm(); lucide.createIcons(); };
+        window.saveCatEdit = async (id) => {
+            const newName = document.getElementById(`edit-cat-name-${id}`).value;
+            const newBudget = parseFloat(document.getElementById(`edit-cat-budget-${id}`).value);
+            await db.collection(`users/${user.uid}/categories`).doc(id).update({ name: newName, budget: newBudget });
+            if(newName !== categories.find(c=>c.id===id).name) {
+                const oldName = categories.find(c=>c.id===id).name;
+                const batch = db.batch();
+                const affected = transactions.filter(t => t.category === oldName);
+                affected.forEach(t => { batch.update(db.collection(`users/${user.uid}/transactions`).doc(t.id), { category: newName }); });
+                await batch.commit();
+                await fetchTransactions();
+            }
+            editingCatId = null;
+            await fetchCategories();
+            updateDashboard();
+        };
 
         // --- IMPORTS ---
         document.getElementById('csv-input').addEventListener('change', async (e) => {
@@ -636,6 +661,11 @@
         window.downloadBackup = () => { const blob = new Blob([JSON.stringify({categories, transactions, rules})], {type:'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `budget_backup.json`; a.click(); };
         window.restoreBackup = async (e) => { const file = e.target.files[0]; if (!file || !confirm("Restore?")) return; const data = JSON.parse(await file.text()); /* Restore logic */ alert("Restored."); };
         window.exportPortableReport = window.downloadBackup;
+
+        // Initial Render Hook
+        const origUpdate = window.updateDashboard;
+        window.updateDashboard = () => { origUpdate(); renderCatManager(); renderAddCatForm(); };
+
     </script>
 </body>
 </html>
